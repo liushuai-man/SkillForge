@@ -14,7 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..core.errors import ObjectNotFoundError, ObjectStoreNotWritableError
+from ..core.errors import ObjectCorruptedError, ObjectNotFoundError, ObjectStoreNotWritableError
+from ..core.hashing import sha256_hex
 from ..core.paths import is_link_like
 from ..core.types import (
     MODE_EXECUTABLE,
@@ -107,11 +108,24 @@ class ObjectStore:
         return self.write(ObjectType.META, encode_meta(payload))
 
     def read_encoded(self, oid: str) -> bytes:
-        """读取解压后的完整存储单元（头部 + 主体）。"""
+        """读取并校验一个对象的完整存储单元（头部 + 主体）。
+
+        依次验证存在性、解压、OID（完整编码哈希）。按契约「合法压缩但内容被替换
+        也必须识别」，任何不匹配都报 ``object_corrupted`` 而不是返回错误内容（AC-03）。
+        """
         path = self.object_path(oid)
         if not path.is_file():
             raise ObjectNotFoundError(f"对象不存在：{oid}", detail=str(path))
-        return zlib.decompress(path.read_bytes())
+        try:
+            encoded = zlib.decompress(path.read_bytes())
+        except zlib.error as exc:
+            raise ObjectCorruptedError(f"对象解压失败：{oid}", detail=str(exc)) from exc
+        actual = sha256_hex(encoded)
+        if actual != oid:
+            raise ObjectCorruptedError(
+                f"对象内容与 OID 不符：期望 {oid}，实际 {actual}", detail=str(path)
+            )
+        return encoded
 
     def read(self, oid: str) -> tuple[ObjectType, bytes]:
         return decode_object(self.read_encoded(oid))

@@ -138,6 +138,19 @@ def test_init_rejects_missing_directory(tmp_path: Path) -> None:
         WorkspaceManager(data_root=tmp_path / "data").init(tmp_path / "nope")
 
 
+def test_init_rejects_data_root_inside_skill(tmp_path: Path) -> None:
+    skill = _make_skill(tmp_path)
+    # 数据根位于 Skill 根内：对象库会被自身扫描纳入，必须拒绝（AC-16）
+    with pytest.raises(InvalidSkillRootError):
+        WorkspaceManager(data_root=skill / ".skillforge").init(skill)
+
+
+def test_init_rejects_data_root_equal_to_skill(tmp_path: Path) -> None:
+    skill = _make_skill(tmp_path)
+    with pytest.raises(InvalidSkillRootError):
+        WorkspaceManager(data_root=skill).init(skill)
+
+
 def test_manages_multiple_workspaces(tmp_path: Path) -> None:
     manager = WorkspaceManager(data_root=tmp_path / "data")
     first = tmp_path / "s1"

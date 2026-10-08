@@ -84,6 +84,14 @@ class WorkspaceManager:
         if not root.is_dir():
             raise InvalidSkillRootError(f"Skill 目录不存在或不是目录：{root}", detail=str(root))
 
+        # 纳管边界（契约 §2.1）：数据根不得等于或位于 Skill 根内，否则对象库会被
+        # 自身扫描纳入，造成自我引用与版本爆炸。
+        data_root = Path(self._data_root).expanduser().resolve()
+        if _is_within(data_root, root):
+            raise InvalidSkillRootError(
+                f"数据根不能位于 Skill 目录内：数据根 {data_root}", detail=str(root)
+            )
+
         existing = self.find_by_path(root)
         if existing is not None:
             raise WorkspaceAlreadyInitializedError(
@@ -225,3 +233,12 @@ def _normalized(path: Path) -> str:
     """路径比较用的规范形式：绝对化 + 平台相关的大小写归一。"""
     resolved = str(Path(path).expanduser().resolve())
     return os.path.normcase(resolved)
+
+
+def _is_within(path: Path, parent: Path) -> bool:
+    """``path`` 是否等于或位于 ``parent`` 之内（按平台大小写规则比较）。"""
+    try:
+        Path(_normalized(path)).relative_to(Path(_normalized(parent)))
+        return True
+    except ValueError:
+        return False

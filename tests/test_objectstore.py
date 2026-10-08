@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from skillforge_vm.core.errors import ObjectNotFoundError
+from skillforge_vm.core.errors import ObjectCorruptedError, ObjectNotFoundError
 from skillforge_vm.core.hashing import sha256_hex
 from skillforge_vm.core.types import MODE_REGULAR, MODE_TREE, ObjectType
 from skillforge_vm.objectstore.objects import (
@@ -109,3 +109,33 @@ def test_write_directory_respects_ignore(store: ObjectStore, tmp_path: Path) -> 
     _, records = store.write_directory(skill, lambda rel: rel.name.endswith(".tmp"))
 
     assert sum(1 for r in records if r.type == ObjectType.BLOB) == 1
+
+
+def test_truncated_compression_is_corrupted(store: ObjectStore) -> None:
+    record = store.write_blob(b"payload")
+    path = store.object_path(record.oid)
+    path.write_bytes(path.read_bytes()[:5])  # 截断的压缩流
+
+    with pytest.raises(ObjectCorruptedError):
+        store.read_encoded(record.oid)
+
+
+def test_bad_header_or_length_is_corrupted(store: ObjectStore) -> None:
+    malformed = b"blob 999\x00abc"  # 头部声明 999，主体只有 3 字节
+    oid = sha256_hex(malformed)
+    path = store.object_path(oid)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(zlib.compress(malformed))
+
+    with pytest.raises(ObjectCorruptedError):
+        store.read(oid)
+
+
+def test_valid_object_replaced_by_another_is_corrupted(store: ObjectStore) -> None:
+    first = store.write_blob(b"first content")
+    second = store.write_blob(b"second content")
+    # 把另一个合法压缩对象的字节放到 first 的路径：合法压缩但内容被替换，必须识别
+    store.object_path(first.oid).write_bytes(store.object_path(second.oid).read_bytes())
+
+    with pytest.raises(ObjectCorruptedError):
+        store.read(first.oid)
