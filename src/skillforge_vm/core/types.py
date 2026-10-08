@@ -17,6 +17,22 @@ class ObjectType(StrEnum):
     META = "meta"  # 快照元数据：父修订、时间、触发方式、来源
 
 
+class SnapshotTrigger(StrEnum):
+    """快照触发方式（M-04 修订字段，§7.2 生命周期值）。"""
+
+    INIT = "init"  # 工作区初始化
+    WATCH = "watch"  # 文件监听
+    MANUAL = "manual"  # 手动快照
+
+
+class SnapshotSource(StrEnum):
+    """快照来源（M-04 修订字段，§7.2 生命周期值）。"""
+
+    INITIAL = "initial"  # 初始状态
+    EDIT = "edit"  # 编辑
+    EXTERNAL = "external"  # 可证明的外部来源
+
+
 # 文件模式（借鉴 Git 的 tree 条目约定）
 MODE_TREE = "40000"
 MODE_REGULAR = "100644"
@@ -73,6 +89,19 @@ DEFAULT_PARSERS: dict[str, str] = {
     ".prompt": "text",
     ".tmpl": "text",
 }
+
+# M-02 / §7.2：抖动静默窗口、稳定扫描重试次数、Change 空闲分组阈值
+DEBOUNCE_MS = 500
+SCAN_ATTEMPTS = 3
+CHANGE_IDLE_MINUTES = 30
+
+# M-04 / §7.3：Change ID 编码（32 字节随机数 → 64 字符正文）
+CHANGE_ID_PREFIX = "CHG-"
+CHANGE_ID_ALPHABET = "zyxwvutsrqponmlk"
+CHANGE_ID_BYTES = 32
+
+# M-04 / §7.2：Revision 元数据（meta 对象）规范版本
+REVISION_META_SCHEMA_VERSION = 1
 
 
 def tool_version() -> str:

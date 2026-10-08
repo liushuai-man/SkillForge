@@ -18,6 +18,7 @@ from skillforge_vm.core.errors import (
 from skillforge_vm.db.connection import connect
 from skillforge_vm.db.schema import TABLE_NAMES
 from skillforge_vm.objectstore.store import ObjectStore
+from skillforge_vm.revision.store import RevisionStore
 from skillforge_vm.workspace.manager import WorkspaceManager
 
 
@@ -36,12 +37,56 @@ def test_init_binds_workspace_and_writes_first_object(tmp_path: Path) -> None:
     result = manager.init(skill)
 
     assert result.file_count == 2
-    assert result.object_count == 4  # 2 个 blob + sub tree + 根 tree
+    assert result.object_count == 5  # 2 个 blob + sub tree + 根 tree + 首个 meta
     assert result.workspace.paths.config_file.is_file()
     assert result.workspace.paths.db_file.is_file()
 
     store = ObjectStore(result.workspace.paths.objects_dir)
     assert store.object_path(result.root_tree_oid).is_file()
+
+
+def test_init_commits_first_revision_and_change(tmp_path: Path) -> None:
+    skill = _make_skill(tmp_path)
+    result = WorkspaceManager(data_root=tmp_path / "data").init(skill)
+
+    conn = connect(result.workspace.paths.db_file)
+    try:
+        revisions = RevisionStore(conn)
+        head = revisions.head(result.workspace.workspace_id)
+        change = revisions.get_change(result.workspace.workspace_id, result.change_id)
+    finally:
+        conn.close()
+
+    assert head is not None
+    assert head.rev_id == result.revision_id
+    assert head.seq == 1
+    assert head.parent_rev_id is None
+    assert head.root_tree_oid == result.root_tree_oid
+    assert (head.trigger, head.source) == ("init", "initial")
+    assert change is not None
+    assert (change.first_rev, change.last_rev) == (result.revision_id, result.revision_id)
+
+
+def test_failed_init_can_be_retried(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    skill = _make_skill(tmp_path)
+    manager = WorkspaceManager(data_root=tmp_path / "data")
+
+    original = ObjectStore.write_directory_detailed
+
+    def boom(self: ObjectStore, root: Path, ignore: object = None) -> object:
+        raise OSError("模拟对象写入失败")
+
+    monkeypatch.setattr(ObjectStore, "write_directory_detailed", boom)
+    with pytest.raises(OSError):
+        manager.init(skill)
+
+    # 失败没有留下可见工作区（可见标志最后发布），因此可以安全重试
+    assert manager.find_by_path(skill) is None
+    monkeypatch.setattr(ObjectStore, "write_directory_detailed", original)
+
+    result = manager.init(skill)
+    assert result.revision_id
+    assert manager.find_by_path(skill) is not None
 
 
 def test_init_does_not_write_into_skill_dir(tmp_path: Path) -> None:

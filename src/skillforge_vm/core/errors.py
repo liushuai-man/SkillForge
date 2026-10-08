@@ -44,3 +44,27 @@ class ObjectNotFoundError(SkillForgeVMError):
 
 class ObjectCorruptedError(SkillForgeVMError):
     code = "object_corrupted"
+
+
+class SnapshotUnstableError(SkillForgeVMError):
+    """工作区持续变化，本次无法捕获稳定内容；可重试（409）。"""
+
+    code = "snapshot_unstable"
+
+
+class InvalidRequestError(SkillForgeVMError):
+    """参数类型、枚举、OID 语法或引用表达式无效（422）。"""
+
+    code = "invalid_request"
+
+
+class RefNotFoundError(SkillForgeVMError):
+    """显式请求的命名引用不存在；不得回退成零基线（404）。"""
+
+    code = "ref_not_found"
+
+
+class RevisionNotFoundError(SkillForgeVMError):
+    """显式请求的修订不存在（404）。"""
+
+    code = "revision_not_found"

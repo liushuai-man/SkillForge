@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core.errors import ObjectNotFoundError, ObjectStoreNotWritableError
+from ..core.paths import is_link_like
 from ..core.types import (
     MODE_EXECUTABLE,
     MODE_REGULAR,
@@ -42,6 +43,25 @@ class ObjectRecord:
     type: ObjectType
     size: int
     storage: str = STORAGE_ZLIB
+
+
+@dataclass(frozen=True)
+class FileBlob:
+    """一个文件在本次 tree 中的落点（M-04 ``blob_index`` 的数据来源）。"""
+
+    rel_path: str
+    oid: str
+    mode: str
+    size: int
+
+
+@dataclass(frozen=True)
+class DirectoryWriteResult:
+    """整棵目录写入对象库的明细。"""
+
+    root: ObjectRecord
+    records: list[ObjectRecord]
+    files: list[FileBlob]
 
 
 class ObjectStore:
@@ -103,9 +123,17 @@ class ObjectStore:
 
         返回 ``(根 tree 记录, 本次涉及的全部对象记录)``；未变化的文件复用已有对象。
         """
+        result = self.write_directory_detailed(root, ignore)
+        return result.root, result.records
+
+    def write_directory_detailed(
+        self, root: Path, ignore: IgnoreFn | None = None
+    ) -> DirectoryWriteResult:
+        """同 ``write_directory``，但额外返回文件路径到 blob 的映射（供 M-04 建索引）。"""
         collected: list[ObjectRecord] = []
-        root_record = self._write_dir(Path(root), Path("."), ignore, collected)
-        return root_record, collected
+        files: list[FileBlob] = []
+        root_record = self._write_dir(Path(root), Path("."), ignore, collected, files)
+        return DirectoryWriteResult(root=root_record, records=collected, files=files)
 
     def _write_dir(
         self,
@@ -113,6 +141,7 @@ class ObjectStore:
         rel: Path,
         ignore: IgnoreFn | None,
         collected: list[ObjectRecord],
+        files: list[FileBlob],
     ) -> ObjectRecord:
         current = root if rel == Path(".") else root / rel
         entries: list[TreeEntry] = []
@@ -120,16 +149,22 @@ class ObjectStore:
             child_rel = child.relative_to(root)
             if ignore is not None and ignore(child_rel):
                 continue
-            if child.is_dir() and not child.is_symlink():
-                sub = self._write_dir(root, child_rel, ignore, collected)
+            if is_link_like(child):
+                continue  # AC-16：不跟随符号链接 / junction
+            if child.is_dir():
+                sub = self._write_dir(root, child_rel, ignore, collected, files)
                 entries.append(TreeEntry(name=child.name, mode=MODE_TREE, oid=sub.oid))
             elif child.is_file():
                 record = self.write_blob_from_file(child)
                 collected.append(record)
-                mode = (
-                    MODE_EXECUTABLE
-                    if child.stat().st_mode & 0o111
-                    else MODE_REGULAR
+                mode = MODE_EXECUTABLE if child.stat().st_mode & 0o111 else MODE_REGULAR
+                files.append(
+                    FileBlob(
+                        rel_path=child_rel.as_posix(),
+                        oid=record.oid,
+                        mode=mode,
+                        size=record.size,
+                    )
                 )
                 entries.append(TreeEntry(name=child.name, mode=mode, oid=record.oid))
         tree = self.write_tree(entries)
