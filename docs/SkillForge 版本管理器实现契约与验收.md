@@ -146,7 +146,7 @@ SourceSpan 固定为 `{path, start_byte, end_byte, text}`，偏移从 0 开始�
 
 ### 4.2 错误分类
 
-下列错误码多数已在 `src/skillforge_vm/core/errors.py` 定义业务错误类型；`invalid_request / ref_not_found / revision_not_found / snapshot_unstable` 于第 2 周随 M-02/M-04 落地，第 3 周 M-10 已把全部已登记错误码接入统一外壳（含请求校验错误收敛为 `invalid_request`、未归类异常收敛为 `operation_failed`）。未实现路由相关的错误码仍不会被触发，但映射已就绪；`workspace_busy` 的错误类型与 409 映射已定义，跨进程互斥尚未接线（见 §6 缺口）。新增错误码必须在此登记并与消费方对齐。
+下列错误码多数已在 `src/skillforge_vm/core/errors.py` 定义业务错误类型；`invalid_request / ref_not_found / revision_not_found / snapshot_unstable` 于第 2 周随 M-02/M-04 落地，第 3 周 M-10 已把全部已登记错误码接入统一外壳（含请求校验错误收敛为 `invalid_request`、未归类异常收敛为 `operation_failed`）。未实现路由相关的错误码仍不会被触发，但映射已就绪；`workspace_busy` 的错误类型与 409 映射已定义，Week 4 数据根独占锁已接入服务生命周期，冲突时启动失败并给出该原因（见 §6）。新增错误码必须在此登记并与消费方对齐。
 
 | code | HTTP | 意义 / 处理 |
 | --- | --- | --- |
@@ -248,5 +248,7 @@ AC-19 A 线部分：已离线构建含静态资源 wheel，并用临时环境安
 - `GET .../status` 的「是否有未纳管改动」按只读全量哈希判定，未做增量或缓存；大工作区性能未按 §4.8 测量。
 - CLI 端口发现由已绑定 socket 直接交给 uvicorn，不存在释放后抢占窗口；runtime 原子发布且受数据根服务锁保护，全局 --data-root 用于后续业务命令发现。真实子进程测试覆盖占用端口回退、CLI init、服务自动保存；强杀可能留下旧 runtime，后续成功启动覆盖。
 - `workspace_url`/多工作区默认选择：CLI 未给 `--ws` 时仅在有唯一工作区时自动选择，未实现「按当前目录匹配」的隐式选择。
+
+本轮执行结果与提交索引见 [A线 Week4 交付与验收记录](./A线%20Week4%20交付与验收记录.md)：89 通过、1 跳过；AC-20 固定小文件 10,000 次保存及 30 次 1 MiB 捕获完成，最大容量/实际分配空间仍未验证。
 
 后续变更使用最小记录：问题 → 决定 → 影响的契约/数据/验收 → 兼容或迁移 → 证据。新发现的实现缺口应登记为待办，不能反向修改需求把缺口描述成已完成。
