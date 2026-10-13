@@ -62,7 +62,7 @@
 
 ### 2.3 撤销：明确待决边界
 
-**TBD-08 待用户决定**：现行约束禁止向 Skill 目录写文件。因此，在该项关闭前，`undo/restore` 只能讨论版本库状态补偿，不能实现文件回写，也不能向用户宣称编辑器中的内容已经恢复。禁止通过改写“不入侵”的措辞偷偷取得文件写入授权。
+**TBD-08 已关闭（2026-10-13 用户明确批准）**：仅显式预览并确认的整个 Skill 恢复与撤销最近恢复允许文件回写，自动纳管仍只读。恢复 v1 以 §2.4 为准；以下早期 TBD-09 草案保留作来源说明，恢复部分已被 §2.4 冻结定义取代。
 
 **TBD-09 待 A 定稿、B 校验**：现有 DDL 尚未完整定义运行状态。实现 M-04/M-09 的状态写入前，必须为下表补齐唯一持久化载体、原子更新方式、重启读取规则及 before/after 序列化样例：
 
@@ -92,7 +92,21 @@
   - `snapshot`：`{v, revision_id, parent_rev_id, seq, trigger, message}`（`message` 可空）。
   - `ref.set`：`{v, name, before_rev_id, after_rev_id}`（`before_rev_id` 首次为 `null`）。
 - **写入边界**：`op` 行在对应业务事务内插入（与 Revision/Change 同一事务）；无变化快照不写 `op`；提交失败随事务回滚，不留半条记录。
-- **仍待冻结（阻塞 undo/restore）**：选中 Baseline 的持久化载体（候选：`ref` 保留名 `baseline`，非本草案结论）、`undo/restore` 的补偿操作 kind 与 before/after 语义、重启后活动 Change 是否回填。这些关闭前不实现任何文件回写，也不注册 `undo/restore` 路由。
+- **仍待冻结（阻塞 undo/restore）**：选中 Baseline 的持久化载体（候选：`ref` 保留名 `baseline`，非本草案结论）、`undo/restore` 的补偿操作 kind 与 before/after 语义、重启后活动 Change 是否回填。上述早期恢复待决内容现由 §2.4 替代；Baseline 仍未冻结，不因恢复 v1 实现而宣称整体已关闭。
+
+### 2.4 受控文件恢复 v1（2026-10-13 用户批准，覆盖 §2.3 中恢复待决描述）
+
+TBD-08 已关闭：自动纳管仍不写 Skill；用户明确发起、预览文件清单并确认后，允许恢复整个 Skill 到指定 Revision，及撤销最近一次文件恢复。逐文件恢复、部分变更恢复、任意历史 Op 跳转和撤销打锚点暂不实现。TBD-09 的恢复子协议按本节冻结；Baseline 选择仍待 A/B 核对，本次恢复不移动任何 ref，不宣称完整 G2 通过。
+
+- 预览先捕获当前稳定内容作为 before Revision，再固定目标 Revision；返回新增/修改/删除文件、目录清单和 plan_id。目标与当前相同返回无变化，不创建恢复操作。预览本身不回写 Skill。
+- 用户确认必须携带 plan_id；CLI 每次展示清单后交互确认（自动化须显式 --yes），API 必须 confirm=true。旧计划遇到新的已提交修订、配置或磁盘变化即冲突，不覆盖。未保存的编辑器缓冲区不在服务保护范围内。
+- 唯一持久化载体为现有 op 表（无 DDL/对象格式变化）。新增三种 kind，payload 保持 v=1：restore.plan 保存 before_rev、target_rev、action（restore/undo_restore）、配置指纹、根身份与按路径排序的影响清单；restore.begin 保存 plan_id；restore.done 保存 plan_id、before_rev、target_rev、after_rev、action。parent_op_id 指向对应 plan；一个 begin 无 done 即 pending。旧数据无此类记录时视为没有恢复；旧二进制不识别 pending，存在未完成恢复时禁止降级运行。
+- begin 必须在首次文件写入前提交。执行共用服务串行写通道；普通快照在 pending 时明确报 restore_pending，不能把半恢复文件提交。仅确认的恢复执行器可在验证最终 tree 等于目标后调用内部完成入口，将新 Revision/快照 Op/restore.done 同事务提交；成功后才通知。历史不删除，seq 继续递增，恢复开启新 Change，ref 不动。
+- 使用逐文件同目录临时文件和原子替换，不声称跨文件原子。临时文件名称绑定计划，恢复中断时保留 pending，status 返回计划 ID；用户通过 restore --resume PLAN 再次预览确认后继续。仅接受路径内容仍为计划 before/target 两种状态（临时文件必须是目标字节的前缀）；其他内容、文件身份/路径类型冲突、忽略规则变化均停止，不自动回滚或覆盖新编辑。重复执行已完成 plan 返回既有 after_rev，不重复写文件或操作。
+- 仅普通纳管文件/目录可写；路径必须在原工作区内，不跟随符号链接/reparse point，拒绝大小写冲突、不安全路径和不受支持的类型。目标涉及当前忽略路径、未纳管文件冲突、需删除含受保护内容的目录时先拒绝。删除仅针对计划中的文件和空目录，绝不递归删除。保留原始 bytes 和受支持的可执行模式。每次写入前与结束时复核；用户应暂停外部编辑，不承诺操作系统未提供的跨进程文件事务。
+- undo 以最近 restore.done 的 before_rev 为目标。若该恢复之后已有内容修订，拒绝盲目撤销并提示显式选择历史修订恢复；撤销自身也是恢复，故可再次 undo 撤销这次恢复。
+- 新增接口：POST /workspaces/{ws}/restore/preview（rev），POST /workspaces/{ws}/undo/preview，GET /workspaces/{ws}/restore/plans/{plan}，POST /workspaces/{ws}/restore/plans/{plan}/apply（confirm）。沿用统一外壳；restore_conflict/restore_pending 为 409，restore_plan_not_found 为 404。当前 status 增加 pending_restore（plan_id 或 null）。
+- AC-18 本轮验收：预览零文件写入；取消不回写；恢复文件新增/删除/修改及空目录；保留当前未捕获内容；undo→undo；ref 不移动；过期计划/忽略文件/链接冲突；失败与重启保持 pending；确认重试恢复并只提交一次；完成后的重复 apply 幂等。单测只使用临时 Skill，不在真实用户目录执行恢复。核心已有 12 项测试，包括 partial/before_commit/after_commit 三处真实进程强杀；文件与目录类型转换、大小写冲突和 Windows 可执行模式变更首版明确拒绝，不能静默部分成功。
 
 ## 3. 对比输入、证据与报告
 
