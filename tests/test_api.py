@@ -236,3 +236,19 @@ async def test_event_subscriptions_are_scoped_and_bounded() -> None:
     assert events[-1]["seq"] == 199
     bus.unsubscribe(a)
     bus.unsubscribe(b)
+
+
+def test_snapshot_reloads_valid_ignore_configuration(tmp_path: Path, skill_dir: Path) -> None:
+    import json
+
+    manager = WorkspaceManager(data_root=tmp_path / "data")
+    service = WorkspaceService(manager)
+    ws = service.init(str(skill_dir))["workspace"]["workspace_id"]
+    service.snapshot(ws)
+    handle = manager.get(ws)
+    raw = handle.config.model_dump()
+    raw["ignore"]["globs"].append("*.yaml")
+    handle.paths.config_file.write_text(json.dumps(raw), encoding="utf-8")
+    assert service.snapshot(ws)["created"]
+    assert not service.status(ws)["has_pending_changes"]
+    assert not service.snapshot(ws)["created"]

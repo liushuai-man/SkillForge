@@ -116,6 +116,8 @@ class WorkspaceService:
             if engine is None:
                 engine = SnapshotEngine(handle)
                 self._engines[handle.workspace_id] = engine
+            else:
+                engine.use_config(handle)
             return engine
 
     # ---- 工作区 ----

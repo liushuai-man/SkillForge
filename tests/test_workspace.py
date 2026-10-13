@@ -12,6 +12,7 @@ import pytest
 
 from skillforge_vm.core.errors import (
     InvalidSkillRootError,
+    OperationFailedError,
     WorkspaceAlreadyInitializedError,
     WorkspaceNotFoundError,
 )
@@ -20,6 +21,27 @@ from skillforge_vm.db.schema import TABLE_NAMES
 from skillforge_vm.objectstore.store import ObjectStore
 from skillforge_vm.revision.store import RevisionStore
 from skillforge_vm.workspace.manager import WorkspaceManager
+
+
+def test_invalid_configuration_keeps_last_valid_then_recovers(tmp_path: Path) -> None:
+    skill = _make_skill(tmp_path)
+    manager = WorkspaceManager(data_root=tmp_path / "data")
+    result = manager.init(skill)
+    ws = result.workspace.workspace_id
+    original = manager.get(ws)
+    config_file = original.paths.config_file
+    config_file.write_text("{broken", encoding="utf-8")
+    assert manager.get(ws) == original
+    with pytest.raises(OperationFailedError):
+        WorkspaceManager(data_root=tmp_path / "data").get(ws)
+    updated = original.config.model_dump()
+    updated["ignore"]["globs"].append("*.yaml")
+    config_file.write_text(json.dumps(updated), encoding="utf-8")
+    assert "*.yaml" in manager.get(ws).config.ignore.globs
+    updated["data_path"] = str(tmp_path / "outside")
+    config_file.write_text(json.dumps(updated), encoding="utf-8")
+    assert manager.get(ws).paths.data == original.paths.data
+    assert not (tmp_path / "outside").exists()
 
 
 def _make_skill(tmp_path: Path) -> Path:

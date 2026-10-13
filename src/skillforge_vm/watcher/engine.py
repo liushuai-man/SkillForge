@@ -90,6 +90,12 @@ class SnapshotEngine:
         """显式边界（打锚点 / 撤销）后，下次内容变化另起 Change（§7.2）。"""
         self._active_change_id = None
 
+    def use_config(self, handle: WorkspaceHandle) -> None:
+        """服务串行通道在任务开始时切换已完整校验的配置快照。"""
+        if handle.workspace_id != self._handle.workspace_id:
+            raise ValueError("不能切换到其他工作区")
+        self._handle = handle
+
     def _capture(
         self,
         ws_id: str,

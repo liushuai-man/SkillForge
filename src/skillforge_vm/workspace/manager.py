@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import uuid
 from dataclasses import dataclass
@@ -16,6 +17,7 @@ from pathlib import Path
 from ..core.config import Settings
 from ..core.errors import (
     InvalidSkillRootError,
+    OperationFailedError,
     WorkspaceAlreadyInitializedError,
     WorkspaceNotFoundError,
 )
@@ -35,6 +37,8 @@ from ..revision.identity import new_change_id, revision_meta_payload
 from ..revision.models import Revision
 from ..revision.store import RevisionStore
 from .models import IgnoreRules, WorkspaceConfig, WorkspacePaths
+
+logger = logging.getLogger(__name__)
 
 
 def _now_iso() -> str:
@@ -71,6 +75,7 @@ class WorkspaceManager:
     def __init__(self, data_root: Path | None = None, settings: Settings | None = None) -> None:
         self._settings = settings or Settings()
         self._data_root = Path(data_root) if data_root is not None else self._settings.data_root
+        self._valid: dict[Path, WorkspaceHandle] = {}
 
     @property
     def data_root(self) -> Path:
@@ -188,6 +193,8 @@ class WorkspaceManager:
 
     def get(self, workspace_id: str) -> WorkspaceHandle:
         """按工作区标识取句柄。"""
+        if not workspace_id or any(c not in "0123456789abcdef" for c in workspace_id):
+            raise WorkspaceNotFoundError(f"工作区不存在：{workspace_id}")
         config_file = self.workspaces_dir / workspace_id / "workspace.json"
         if not config_file.is_file():
             raise WorkspaceNotFoundError(f"工作区不存在：{workspace_id}", detail=str(config_file))
@@ -223,12 +230,30 @@ class WorkspaceManager:
             ignore=IgnoreRules(dirs=list(DEFAULT_IGNORE_DIRS), globs=list(DEFAULT_IGNORE_GLOBS)),
         )
 
-    @staticmethod
-    def _load_handle(config_file: Path) -> WorkspaceHandle:
-        raw = json.loads(config_file.read_text(encoding="utf-8"))
-        config = WorkspaceConfig.model_validate(raw)
-        paths = WorkspacePaths.for_data_path(Path(config.data_path), Path(config.root_path))
-        return WorkspaceHandle(config=config, paths=paths)
+    def _load_handle(self, config_file: Path) -> WorkspaceHandle:
+        previous = self._valid.get(config_file)
+        try:
+            raw = json.loads(config_file.read_text(encoding="utf-8"))
+            config = WorkspaceConfig.model_validate(raw)
+            data = config_file.parent.resolve()
+            root = Path(config.root_path).resolve()
+            if config.workspace_id != data.name or Path(config.data_path).resolve() != data:
+                raise ValueError("工作区身份或数据路径与配置位置不一致")
+            if _is_within(self._data_root, root):
+                raise ValueError("数据根不能位于 Skill 目录内")
+            if previous and _normalized(root) != _normalized(Path(previous.config.root_path)):
+                raise ValueError("已纳管工作区不能通过配置文件切换根目录")
+            paths = WorkspacePaths.for_data_path(data, root)
+            handle = WorkspaceHandle(config=config, paths=paths)
+        except (OSError, ValueError) as exc:
+            logger.error("工作区配置无效：%s：%s", config_file, exc)
+            if previous is not None:
+                return previous
+            raise OperationFailedError(
+                "工作区配置无效且没有上次有效配置", detail=str(config_file)
+            ) from exc
+        self._valid[config_file] = handle
+        return handle
 
     @staticmethod
     def _write_config(config_file: Path, config: WorkspaceConfig) -> None:
