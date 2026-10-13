@@ -91,7 +91,9 @@ class ObjectStore:
         encoded = encode_object(obj_type, body)
         oid = object_id(obj_type, body)
         path = self.object_path(oid)
-        if not path.is_file():
+        if path.is_file():
+            self.read_encoded(oid)
+        else:
             self._atomic_write(path, zlib.compress(encoded))
         return ObjectRecord(oid=oid, type=obj_type, size=len(body))
 

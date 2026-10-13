@@ -236,7 +236,7 @@ SourceSpan 固定为 `{path, start_byte, end_byte, text}`，偏移从 0 开始�
 
 - AC-15 目前只覆盖「提交失败不可见且可重试」，尚无真实进程强杀（提交前 / 对象写入中）的恢复证据。
 - EDGE-03：监听使用 step=500 ms 静默与 debounce=2000 ms 最大分组，并在超时扫描中重试；服务生命周期接入已有/新工作区监听，自动快照提交后发布 SSE。AC-05 新增真实服务五次间隔保存只新增一个修订、停机修改重启补获的验收测试。
-- `is_link_like` 的 junction 判定依赖 `Path.is_junction`（Python 3.12+）；在 3.11 上退化为仅查符号链接，junction 检测未生效。
+- AC-03/16：对象复用损坏时不提交新修订、不自动覆盖损坏证据；稳定扫描新增文件身份检查。reparse point 检测改用 lstat 属性，实际 Python 3.11 与 macOS/Linux 平台仍待执行。
 - 跨进程「单一写通道」`workspace_busy` 未实现：当前仅有进程内工作区级互斥（EDGE-15）；错误类型与 409 映射已就绪但无触发点。
 - init 失败不回滚孤儿数据目录：允许保留但未清理，重试会新建 `workspace_id`，旧目录成为不可达残留。
 - SSE 目前只推送 `snapshot/created`；`diff/ready`、`parse/degraded` 待 B 线 M-05/M-08 接入。事件为进程内广播，不承诺历史重放（契约 §4.3）。
@@ -245,4 +245,3 @@ SourceSpan 固定为 `{path, start_byte, end_byte, text}`，偏移从 0 开始�
 - `workspace_url`/多工作区默认选择：CLI 未给 `--ws` 时仅在有唯一工作区时自动选择，未实现「按当前目录匹配」的隐式选择。
 
 后续变更使用最小记录：问题 → 决定 → 影响的契约/数据/验收 → 兼容或迁移 → 证据。新发现的实现缺口应登记为待办，不能反向修改需求把缺口描述成已完成。
-

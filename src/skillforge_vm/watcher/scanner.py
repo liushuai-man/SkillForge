@@ -22,6 +22,8 @@ class ScanEntry:
     mode: str
     size: int
     mtime_ns: int
+    device: int = 0
+    inode: int = 0
 
 
 def scan_files(root: Path, ignore: IgnoreFn | None = None) -> tuple[ScanEntry, ...]:
@@ -60,5 +62,7 @@ def _walk(
                     mode=mode,
                     size=stat.st_size,
                     mtime_ns=stat.st_mtime_ns,
+                    device=stat.st_dev,
+                    inode=stat.st_ino,
                 )
             )

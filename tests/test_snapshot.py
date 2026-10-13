@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from skillforge_vm.core.errors import SnapshotUnstableError
+from skillforge_vm.core.errors import ObjectCorruptedError, SnapshotUnstableError
 from skillforge_vm.core.types import MODE_REGULAR
 from skillforge_vm.db.connection import connect
 from skillforge_vm.db.connection import transaction as real_transaction
@@ -21,7 +21,7 @@ from skillforge_vm.revision.models import Revision
 from skillforge_vm.revision.store import RevisionStore
 from skillforge_vm.watcher import engine as engine_module
 from skillforge_vm.watcher.engine import SnapshotEngine
-from skillforge_vm.watcher.scanner import ScanEntry
+from skillforge_vm.watcher.scanner import ScanEntry, scan_files
 from skillforge_vm.workspace.manager import WorkspaceHandle, WorkspaceManager
 
 
@@ -243,3 +243,28 @@ def test_symlink_entry_is_skipped(tmp_path: Path, skill_dir: Path) -> None:
     result = WorkspaceManager(data_root=tmp_path / "data").init(skill_dir)
 
     assert result.file_count == 2  # SKILL.md + sub/config.yaml，符号链接不纳管
+
+
+def test_corrupt_reused_blob_prevents_new_revision(workspace: WorkspaceHandle) -> None:
+    store = ObjectStore(workspace.paths.objects_dir)
+    record = store.write_blob((Path(workspace.config.root_path) / "SKILL.md").read_bytes())
+    store.object_path(record.oid).write_bytes(b"broken")
+    (Path(workspace.config.root_path) / "new.md").write_text("new", encoding="utf-8")
+    with pytest.raises(ObjectCorruptedError):
+        SnapshotEngine(workspace).capture()
+    assert _head(workspace).seq == 1
+
+
+def test_scanner_detects_atomic_replacement_with_same_size_and_mtime(tmp_path: Path) -> None:
+    target = tmp_path / "a.md"
+    target.write_bytes(b"old")
+    metadata = target.stat()
+    before = scan_files(tmp_path)
+    replacement = tmp_path / "replacement"
+    replacement.write_bytes(b"new")
+    os.utime(replacement, ns=(metadata.st_atime_ns, metadata.st_mtime_ns))
+    os.replace(replacement, target)
+    after = scan_files(tmp_path)
+    assert before[0].size == after[0].size
+    assert before[0].mtime_ns == after[0].mtime_ns
+    assert before != after

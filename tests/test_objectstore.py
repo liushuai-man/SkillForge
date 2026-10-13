@@ -139,3 +139,12 @@ def test_valid_object_replaced_by_another_is_corrupted(store: ObjectStore) -> No
 
     with pytest.raises(ObjectCorruptedError):
         store.read(first.oid)
+
+
+def test_reusing_corrupted_object_fails_without_overwriting(store: ObjectStore) -> None:
+    record = store.write_blob(b"content")
+    path = store.object_path(record.oid)
+    path.write_bytes(b"corrupt")
+    with pytest.raises(ObjectCorruptedError):
+        store.write_blob(b"content")
+    assert path.read_bytes() == b"corrupt"
