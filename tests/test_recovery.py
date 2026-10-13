@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import json
 import multiprocessing
+import threading
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
 
 from skillforge_vm.core.errors import WorkspaceBusyError
-from skillforge_vm.core.locking import DataRootLock
+from skillforge_vm.core.locking import DataRootLock, SerialGate
 from skillforge_vm.db.connection import connect
 from skillforge_vm.objectstore.store import ObjectStore
 from skillforge_vm.oplog.store import OpStore
@@ -124,3 +126,31 @@ async def test_second_service_cannot_start_on_same_root(tmp_path: Path) -> None:
                 pytest.fail("第二个服务不得启动")
     async with second.router.lifespan_context(second):
         pass
+
+
+def test_write_gate_is_fifo_and_reentrant() -> None:
+    gate = SerialGate()
+    seen = []
+
+    def write(index):
+        with gate, gate:
+            seen.append(index)
+
+    threads = []
+    with gate:
+        for index in range(5):
+            thread = threading.Thread(target=write, args=(index,))
+            threads.append(thread)
+            thread.start()
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                with gate._condition:
+                    if len(gate._waiters) == index + 1:
+                        break
+                time.sleep(0.001)
+            else:
+                pytest.fail("线程没有进入写队列")
+    for thread in threads:
+        thread.join(2)
+        assert not thread.is_alive()
+    assert seen == list(range(5))

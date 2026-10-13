@@ -204,10 +204,14 @@ class WorkspaceManager:
         """列出全部已纳管工作区。"""
         if not self.workspaces_dir.is_dir():
             return []
-        return [
-            self._load_handle(config_file)
-            for config_file in sorted(self.workspaces_dir.glob("*/workspace.json"))
-        ]
+        handles = []
+        for config_file in sorted(self.workspaces_dir.glob("*/workspace.json")):
+            try:
+                handles.append(self._load_handle(config_file))
+            except OperationFailedError:
+                # 单工作区配置损坏已有具体诊断；不得阻断其他工作区启动。
+                continue
+        return handles
 
     def find_by_path(self, skill_path: str | Path) -> WorkspaceHandle | None:
         """按 Skill 目录查找已纳管工作区（路径比较，不关心大小写）。"""

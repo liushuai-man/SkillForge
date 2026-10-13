@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sqlite3
 import threading
 from collections.abc import Callable
 
@@ -39,24 +40,30 @@ class WorkspaceWatcher:
     async def run(self, stop_event: threading.Event | None = None) -> None:
         """持续监听直到 ``stop_event`` 置位。"""
         root = str(self._engine.handle.config.root_path)
+        stop_event = stop_event or threading.Event()
         # 启动扫描兜底：补上服务启动/监听未就绪期间发生的变化（设计 §3.2 M-02）。
         # 无变化时 capture 为零写入，不违反 NFR-01。
         self._capture_safely(root)
-        async for _changes in awatch(
-            root,
-            debounce=max(2000, self._debounce_ms),
-            step=self._debounce_ms,
-            rust_timeout=2000,
-            yield_on_timeout=True,
-            watch_filter=None,
-            stop_event=stop_event,
-        ):
-            self._capture_safely(root)
+        while not stop_event.is_set():
+            try:
+                async for _changes in awatch(
+                    root,
+                    debounce=max(2000, self._debounce_ms),
+                    step=self._debounce_ms,
+                    rust_timeout=2000,
+                    yield_on_timeout=True,
+                    watch_filter=None,
+                    stop_event=stop_event,
+                ):
+                    self._capture_safely(root)
+            except (OSError, RuntimeError) as exc:
+                logger.error("文件监听不可用，等待目录恢复后重试：%s：%s", root, exc)
+                await asyncio.to_thread(stop_event.wait, 1.0)
 
     def _capture_safely(self, root: str) -> None:
         try:
             self._capture()
-        except (SkillForgeVMError, OSError) as exc:
+        except (SkillForgeVMError, OSError, sqlite3.Error) as exc:
             logger.error("快照失败，保留已提交状态并在下一轮重试：%s：%s", root, exc)
 
     def start_background(self) -> tuple[threading.Thread, threading.Event]:

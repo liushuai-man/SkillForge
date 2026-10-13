@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 import time
 from pathlib import Path
 
@@ -39,3 +40,18 @@ def test_watcher_commits_a_save(workspace: WorkspaceHandle, skill_dir: Path) -> 
     finally:
         stop_event.set()
         thread.join(timeout=5)
+
+
+def test_database_failure_is_reported_and_next_attempt_recovers(workspace, caplog) -> None:
+    calls = []
+
+    def capture():
+        calls.append(1)
+        if len(calls) == 1:
+            raise sqlite3.OperationalError("database is locked")
+
+    watcher = WorkspaceWatcher(SnapshotEngine(workspace), capture=capture)
+    watcher._capture_safely(workspace.config.root_path)
+    watcher._capture_safely(workspace.config.root_path)
+    assert len(calls) == 2
+    assert "database is locked" in caplog.text

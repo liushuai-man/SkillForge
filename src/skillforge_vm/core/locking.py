@@ -4,10 +4,49 @@ from __future__ import annotations
 
 import errno
 import os
+import threading
+from collections import deque
 from pathlib import Path
 from typing import BinaryIO
 
 from .errors import WorkspaceBusyError
+
+
+class SerialGate:
+    """按排队次序进入写通道；同一线程可重入（tag 内捕获快照）。"""
+
+    def __init__(self) -> None:
+        self._condition = threading.Condition()
+        self._waiters: deque[object] = deque()
+        self._owner: int | None = None
+        self._depth = 0
+
+    def __enter__(self):
+        owner = threading.get_ident()
+        with self._condition:
+            if self._owner == owner:
+                self._depth += 1
+                return self
+            ticket = object()
+            self._waiters.append(ticket)
+            try:
+                while self._owner is not None or self._waiters[0] is not ticket:
+                    self._condition.wait()
+            except BaseException:
+                self._waiters.remove(ticket)
+                self._condition.notify_all()
+                raise
+            self._waiters.popleft()
+            self._owner = owner
+            self._depth = 1
+            return self
+
+    def __exit__(self, *exc):
+        with self._condition:
+            self._depth -= 1
+            if self._depth == 0:
+                self._owner = None
+                self._condition.notify_all()
 
 
 class DataRootLock:

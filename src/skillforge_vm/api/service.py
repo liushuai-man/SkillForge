@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core.errors import InvalidRequestError, RefNotFoundError, RevisionNotFoundError
-from ..core.locking import DataRootLock
+from ..core.locking import DataRootLock, SerialGate
 from ..core.types import ObjectType, SnapshotSource, SnapshotTrigger
 from ..db.connection import connect, transaction
 from ..objectstore.objects import object_id
@@ -65,7 +65,7 @@ class WorkspaceService:
         self._bus = bus or EventBus()
         self._engines: dict[str, SnapshotEngine] = {}
         self._guard = threading.Lock()
-        self._writes = threading.RLock()
+        self._writes = SerialGate()
         self._watchers: dict[str, tuple[threading.Thread, threading.Event]] = {}
         self._running = False
         self._root_lock = DataRootLock(self._manager.data_root)

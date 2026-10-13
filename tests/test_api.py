@@ -252,3 +252,31 @@ def test_snapshot_reloads_valid_ignore_configuration(tmp_path: Path, skill_dir: 
     assert service.snapshot(ws)["created"]
     assert not service.status(ws)["has_pending_changes"]
     assert not service.snapshot(ws)["created"]
+
+
+async def test_restart_isolates_bad_config_and_recovers_missing_root(tmp_path: Path) -> None:
+    root = tmp_path / "data"
+    manager = WorkspaceManager(data_root=root)
+    good, bad = tmp_path / "good", tmp_path / "bad"
+    good.mkdir()
+    bad.mkdir()
+    (good / "a.md").write_bytes(b"before")
+    good_handle = manager.init(good).workspace
+    bad_handle = manager.init(bad).workspace
+    bad_handle.paths.config_file.write_text("broken", encoding="utf-8")
+    parked = tmp_path / "parked"
+    good.rename(parked)
+    service = WorkspaceService(WorkspaceManager(data_root=root))
+    app = create_app(service=service)
+    async with app.router.lifespan_context(app):
+        await asyncio.sleep(0.2)
+        parked.rename(good)
+        (good / "a.md").write_bytes(b"after")
+        for _ in range(120):
+            status = service.status(good_handle.workspace_id)
+            if status["head_seq"] == 2:
+                break
+            await asyncio.sleep(0.05)
+        assert status["head_seq"] == 2
+        assert not status["has_pending_changes"]
+        assert len(service.list_workspaces()) == 1
