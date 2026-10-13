@@ -227,7 +227,7 @@ SourceSpan 固定为 `{path, start_byte, end_byte, text}`，偏移从 0 开始�
 
 ### 5.2 交付证据
 
-一键体验入口：`uv run --no-sync python scripts/check_experience.py`。覆盖真实服务/CLI 初始化、监听生成修订（不调用手动 snapshot）、同内容五次保存不增加 Revision/Op、命名锚点不移动，以及终止服务后修改/重启补获与历史保留。每次生成独立测试 Skill 和数据根，记录逐项 passed/failed/not_run 到 `dist/experience-check/run-*/result.json`，保留 CLI 和服务日志；失败非零退出，不把后续未运行项算通过。对应 AC-01/04/05/08/15 的部分行为，不替代完整 AC 或安装/界面/撤销验收；进程终止不等同 Ctrl+C 优雅退出。
+一键体验入口：`uv run --no-sync python scripts/check_experience.py`。覆盖真实服务/CLI 初始化、监听生成修订（不调用手动 snapshot）、同内容五次保存不增加 Revision/Op、命名锚点不移动，以及终止服务后修改/重启补获与历史保留；新增恢复预览后取消、确认恢复、重复计划幂等、undo→undo，共 8 项。每次生成独立测试 Skill 和数据根，记录逐项 passed/failed/not_run 到 `dist/experience-check/run-*/result.json`，保留 CLI 和服务日志；失败非零退出，不把后续未运行项算通过。对应 AC-01/04/05/08/15/18 的部分行为，不替代完整 AC 或安装/界面验收；恢复中途强杀与路径冲突由 pytest 单独覆盖；进程终止不等同 Ctrl+C 优雅退出。
 
 每个实现任务只选相关 AC，不要求每次跑完整套件。报告：关联需求/AC、运行命令、结果、未运行原因、文档更新及剩余待决项。存储/事务变更须测失败路径；算法变更须测无缓存重算；接口变更须测真实消费模型，不能只测自己构造的字典。
 

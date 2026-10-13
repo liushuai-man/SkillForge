@@ -18,12 +18,15 @@
 | 1787c4c | CLI 全局数据根发现、已绑定端口直接移交、原子运行记录、成功启动后发布地址 |
 | 8589353 | 临时 staging 构建含前端资源 wheel；实际安装后验证脚本 |
 | e4a23da | FIFO 可重入写通道；隔离坏工作区配置；数据库/监听失败重试、暂失目录恢复 |
+| a90ba1c | 确认式文件恢复核心；持久化计划与 pending；部分恢复、事务前后强杀续作 |
+| 2e26310 | 恢复/撤销预览、确认与计划读取 API；CLI restore/undo/续作；保护后续编辑 |
+| 8e05c9a | 非法 Windows 路径提前拒绝；临时文件续作、类型/大小写冲突验收 |
 
 每个主题均在全仓 Ruff 与 pytest 通过后独立提交，未 push；未修改 schema、对象编码或新增依赖。
 
 ## 验证结果
 
-- Windows 11（10.0.26200）、Python 3.12.15；最终代码测试 **89 passed、1 skipped**，Ruff 通过。
+- Windows 11（10.0.26200）、Python 3.12.15；恢复 v1 接入后最终代码测试 **120 passed、2 skipped**，Ruff 通过。
 - 跳过项：环境不能创建符号链接；不能据此宣称该平台边界已验收。
 - 真实服务测试：CLI 启动、首选端口占用后发现新端口、CLI init、保存自动推进修订。
 - AC-05：真实监听下五次间隔保存合并为一次提交；停机期间修改在重启后补获。
@@ -31,12 +34,14 @@
 - EDGE-15：第二个服务拒绝进入同一数据根；强杀自动释放锁；服务内 FIFO 与重入测试通过。
 - 故障隔离：一个坏配置不阻止健康工作区；根目录恢复后自动捕获。启动时被隔离的坏配置应修复后重启服务重新纳入监听。
 - 前端 `npm run build` 通过；**仅证明当前占位页可构建，M-11 尚未完成。**
+- 恢复 v1：预览先保存未捕获内容、取消零回写、整 Skill 恢复、undo→undo、旧计划幂等、后续编辑冲突保护、pending 阻断快照与续作通过；partial/before_commit/after_commit 三处恢复强杀通过。
+- 一键真实服务/CLI 体验 **8 项全部通过**：`uv run --no-sync python scripts/check_experience.py`。最近证据目录 `dist/experience-check/run-k2gbli35/`，含 result.json、CLI 与两次服务日志；使用生成的测试 Skill，无真实用户内容。
 
 ## 安装产物
 
 本地文件：`dist/skillforge_vm-0.1.0-py3-none-any.whl`（构建产物不提交 Git）。
 
-SHA-256：`e36b9337d6b1f4cb985e3a18246c98740b9e00933a4d77c5375ef8dd21991835`。
+恢复 v1 重建包 SHA-256：`59d2d1964456325ca9727c68106def5b48a8762a035f4e8ee2036bb6c25c306e`。
 
 复现命令：
 
@@ -47,7 +52,7 @@ uv run --no-sync python scripts/verify_release.py dist/skillforge_vm-0.1.0-py3-n
 
 离线缓存构建 wheel 成功；验证 wheel 内入口与引用资源齐全。
 **干净环境离线依赖安装失败**：本机缓存缺少 pydantic-core、watchfiles 等依赖分发包，未联网补装。
-显式使用 `--reuse-installed-deps` 后，wheel 安装在临时虚拟环境且确认加载的是安装包代码；移除 Node PATH 后，真实 HTTP 首页/资源、CLI、自动快照、锚点均通过。
+显式使用 `--reuse-installed-deps` 后，wheel 安装在临时虚拟环境且确认加载的是安装包代码；移除 Node PATH 后，真实 HTTP 首页/资源、CLI、自动快照、锚点、恢复与撤销均通过。恢复 v1 重建包已重新执行该验证。
 该模式复用现有依赖，不等同干净机器安装、pipx 安装或物理断网环境验证。
 
 终端用户安装方式：`pipx install <wheel路径>`；运行 `skillforge-vm --data-root <数据目录> start`，业务命令传相同全局数据根或统一设置 `SKILLFORGE_VM_DATA_ROOT`。
@@ -81,5 +86,6 @@ uv run --no-sync python scripts/verify_release.py dist/skillforge_vm-0.1.0-py3-n
 - macOS/Linux、Python 3.11、符号链接/junction 实机矩阵、断电、对象临时文件半写与 init 发布窗口强杀尚未全部覆盖。
 - 干净机器/pipx 安装、断网机器运行、最大容量与实际分配空间尚未验证。
 - init 失败允许不可达目录残留，未自动 GC；不删除用户既有数据。
+- 恢复 v1 仅完整 Skill 纳管内容；不支持部分文件、文件/目录类型转换、撤销锚点。每步全量冲突检查存在大量文件时的读取开销，批量恢复时延未验证；外部编辑器应先保存并暂停写入，未保存缓冲区不在保护范围内。
 
 因此：A 线核心自动快照链路已有实测证据；Week 4 交付准备取得安装产物和恢复/性能记录，**不将部分验收表述为整个产品可交付**。

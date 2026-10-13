@@ -124,7 +124,21 @@ def main() -> None:
                     check=True,
                     timeout=15,
                 )
-                print("PASS: wheel 安装、无 Node PATH、网页资源、真实 CLI、自动快照与锚点")
+                for command, expected, seq in (
+                    (["restore", "@~1", "--yes"], b"# before", 3),
+                    (["undo", "--yes"], b"# after", 4),
+                ):
+                    subprocess.run(
+                        [str(python), "-m", "skillforge_vm.cli.main", *command],
+                        cwd=root,
+                        env=env,
+                        check=True,
+                        timeout=15,
+                    )
+                    assert (skill / "SKILL.md").read_bytes() == expected
+                    status = json.loads(get(f"/api/workspaces/{ws}/status"))["data"]
+                    assert status["head_seq"] == seq and status["pending_restore"] is None
+                print("PASS: wheel 安装、无 Node PATH、网页资源、CLI、自动快照、锚点、恢复与撤销")
                 if args.reuse_installed_deps:
                     print("LIMITATION: 复用现有依赖，干净环境依赖安装未验证")
             finally:

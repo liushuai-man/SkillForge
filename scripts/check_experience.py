@@ -49,7 +49,7 @@ class ExperienceCheck:
         )
         self.python = [getattr(sys, "_base_executable", sys.executable), "-c", bootstrap]
 
-    def cli(self, *args: str) -> str:
+    def cli(self, *args: str, input_text: str | None = None) -> str:
         command = [*self.python, *args]
         result = subprocess.run(
             command,
@@ -60,6 +60,7 @@ class ExperienceCheck:
             encoding="utf-8",
             errors="replace",
             timeout=20,
+            input=input_text,
         )
         with (self.root / "cli.log").open("a", encoding="utf-8") as log:
             log.write(f"$ {' '.join(args)}\n{result.stdout}{result.stderr}\n")
@@ -163,6 +164,7 @@ class ExperienceCheck:
     def anchor(self) -> None:
         self.cli("tag", "tested")
         self.anchor_id = self.revision("tested")["rev_id"]
+        self.anchor_bytes = self.file.read_bytes()
         self.cli("show", "tested")
         self.file.write_bytes("# 演示 Skill\n回答不要超过三段。\n".encode())
         self.wait_seq(3)
@@ -187,6 +189,47 @@ class ExperienceCheck:
             self.cli(command)
         self.cli("show", "tested")
 
+    def restore_cancel(self) -> None:
+        self.before_restore_bytes = self.file.read_bytes()
+        output = self.cli("restore", "tested", input_text="n\n")
+        require("已取消" in output, "取消恢复未得到明确响应")
+        require(self.file.read_bytes() == self.before_restore_bytes, "取消恢复改写了文件")
+        require(self.status()["head_seq"] == 4, "取消恢复产生了修订")
+        require(self.status()["pending_restore"] is None, "取消恢复留下 pending")
+
+    def restore_confirm(self) -> None:
+        self.cli("restore", "tested", "--yes")
+        self.wait_seq(5)
+        require(self.file.read_bytes() == self.anchor_bytes, "恢复未回写锚点原始字节")
+        require(
+            self.revision("last")["root_tree_oid"] == self.revision("tested")["root_tree_oid"],
+            "恢复后的树与目标不符",
+        )
+        require(self.revision("tested")["rev_id"] == self.anchor_id, "恢复移动了锚点")
+        ops = self.get(f"/workspaces/{self.ws}/ops")
+        done = [op for op in ops if op["kind"] == "restore.done"]
+        require(len(done) == 1, "恢复完成日志数量错误")
+        self.completed_plan = json.loads(done[0]["payload_json"])["plan_id"]
+        self.cli("restore", "--resume", self.completed_plan, "--yes")
+        require(self.get(f"/workspaces/{self.ws}/ops") == ops, "重复计划生成了操作日志")
+        self.wait_seq(5)
+
+    def undo_restore(self) -> None:
+        self.cli("undo", "--yes")
+        self.wait_seq(6)
+        require(self.file.read_bytes() == self.before_restore_bytes, "撤销没有恢复操作前内容")
+        # 历史已完成计划即使在后续修订后重试也不能再次覆盖当前文件。
+        ops = self.get(f"/workspaces/{self.ws}/ops")
+        self.cli("restore", "--resume", self.completed_plan, "--yes")
+        require(self.get(f"/workspaces/{self.ws}/ops") == ops, "旧计划重试修改了历史")
+        require(self.file.read_bytes() == self.before_restore_bytes, "旧计划重试覆盖了撤销后的内容")
+        self.wait_seq(6)
+        self.cli("undo", "--yes")
+        self.wait_seq(7)
+        require(self.file.read_bytes() == self.anchor_bytes, "撤销撤销没有回到目标内容")
+        require(self.status()["pending_restore"] is None, "恢复结束后 pending 未清除")
+        require(self.revision("tested")["rev_id"] == self.anchor_id, "撤销移动了锚点")
+
     def run(self) -> int:
         checks = [
             ("服务启动、CLI 纳管及初始修订", self.setup),
@@ -194,6 +237,9 @@ class ExperienceCheck:
             ("同内容保存五次不新增修订或操作日志", self.unchanged_save),
             ("打锚点后继续保存，锚点保持不变", self.anchor),
             ("终止服务、停机修改、重启补获及历史保留", self.restart),
+            ("恢复预览后取消，文件与修订保持不变", self.restore_cancel),
+            ("确认恢复锚点原文、重复计划幂等、锚点不移动", self.restore_confirm),
+            ("撤销恢复及撤销撤销、历史保留", self.undo_restore),
         ]
         print(f"测试目录与日志：{self.root}", flush=True)
         failed = False
@@ -219,7 +265,8 @@ class ExperienceCheck:
                 "passed": not failed and len(self.steps) == len(checks),
                 "not_covered": [
                     "语义/文本报告和真实对比界面",
-                    "Baseline 选择与 undo/restore",
+                    "Baseline 选择",
+                    "恢复中途强杀与路径冲突（由 pytest 覆盖）",
                     "安装包、平台矩阵及完整产品验收",
                     "Ctrl+C 优雅退出",
                 ],
@@ -228,8 +275,9 @@ class ExperienceCheck:
                 json.dumps(report, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
             )
-        print("[未覆盖] 报告/界面、Baseline/撤销、安装与平台验收；本次终止进程不等于 Ctrl+C 退出。")
-        print(f"结果：{'失败' if failed else '全部 5 项通过'}；详情：{self.root / 'result.json'}")
+        print("[未覆盖] 报告/界面、Baseline、安装与平台验收；本次终止进程不等于 Ctrl+C 退出。")
+        result = "失败" if failed else f"全部 {len(checks)} 项通过"
+        print(f"结果：{result}；详情：{self.root / 'result.json'}")
         return int(failed)
 
 
