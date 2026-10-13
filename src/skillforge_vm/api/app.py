@@ -11,10 +11,12 @@ import asyncio
 import json
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, FastAPI, Query, Request
 from sse_starlette.sse import EventSourceResponse
+from starlette.staticfiles import StaticFiles
 
 from ..workspace.manager import WorkspaceManager
 from .envelope import RequestIdMiddleware, envelope_ok, register_error_handlers
@@ -144,4 +146,7 @@ def create_app(
         return EventSourceResponse(_generate())
 
     app.include_router(router)
+    assets = Path(__file__).resolve().parents[1] / "web_assets"
+    if (assets / "index.html").is_file():
+        app.mount("/", StaticFiles(directory=assets, html=True), name="web")
     return app

@@ -234,6 +234,8 @@ SourceSpan 固定为 `{path, start_byte, end_byte, text}`，偏移从 0 开始�
 
 配置验收补充：运行中非法配置保留上次完整校验值；修复文件后下一次任务生效；重启时非法配置且无有效缓存报 operation_failed。配置数据路径与自身位置不符不得绕过数据根锁。
 
+AC-19 A 线部分：已离线构建含静态资源 wheel，并用临时环境安装后验证真实 HTTP/CLI、自动快照、锚点及无 Node PATH；本机离线依赖缓存不全，干净环境安装失败。显式 --reuse-installed-deps 的运行验证通过，不替代干净环境/断网机器验证，前端仍为占位。
+
 **本轮检查登记的实现缺口（不改变需求，待后续处理）**：
 
 - AC-15 新增真实 spawn 子进程检查点强杀：对象发布后、业务事务 commit 前、commit 后返回前；验证已提交 seq/Op 原子性、对象字节读回、重试幂等和 SQLite integrity_check。对象临时文件中途、init 发布窗口与断电仍未验证。

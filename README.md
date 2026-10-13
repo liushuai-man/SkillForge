@@ -44,3 +44,9 @@ uv run skillforge-vm ops                            # 操作日志
 - **尚未实现**：语义/文本对比与报告（B 线 M-05~M-08）、对比界面（M-11）、`undo/restore`（受 TBD-08/TBD-09 阻塞）。`diff` 与 `undo` 命令会以非零退出并说明原因，不返回伪成功。
 
 > 安装包（pipx + 预构建前端、终端用户免 Node）与跨平台验证尚未完成，见设计 §4.7 与实现契约 §6。
+
+## 构建与验证安装包
+
+开发机先运行 `uv run python scripts/build_release.py`（使用现有 Node 依赖与离线 Python 构建缓存），生成包含前端资源的 `dist/skillforge_vm-0.1.0-py3-none-any.whl`。终端用户可用 `pipx install <wheel路径>` 安装，运行时不需要 Node。
+
+运行 `uv run python scripts/verify_release.py <wheel路径>` 检查离线缓存安装与服务；缓存不足时会明确失败。可显式追加 `--reuse-installed-deps` 仅验证包运行，此结果不算干净环境依赖安装通过。当前前端仍是占位页，语义报告与撤销尚不可用。

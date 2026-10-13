@@ -772,6 +772,8 @@ M-12 Week 4：全局 `--data-root` 贯穿所有命令的地址发现；端口从
 | 被嵌入 | 作为库被 SkillForge 主平台引入；主平台注册 `BehaviorDiffAdapter` 即可获得行为对比 |
 | 演进 | 本地网页 + CLI → 桌面套壳 → IDE 薄入口 → 云端同步（远期可选） |
 
+A 线 Week 4 发布链路：scripts/build_release.py 在临时 staging 中合入 frontend/dist 并离线构建 wheel，检查入口引用的资源均在包内；运行时由既有 Starlette StaticFiles 托管，API 优先注册。源码没有产物时不挂载网页。scripts/verify_release.py 验证安装后 HTTP/CLI、自动快照与锚点，支持显式复用现有依赖的受限验证；该模式不等于干净环境安装通过。M-11 当前仍为占位页面，不因此宣称 G3 完成。
+
 ## 4.8 性能与容量目标
 
 | 阶段 | 目标 |
