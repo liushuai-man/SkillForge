@@ -47,6 +47,7 @@ def test_no_change_commits_nothing(workspace: WorkspaceHandle) -> None:
     engine = SnapshotEngine(workspace)
     before_head = _head(workspace)
     before_objects = _count(workspace, "object")
+    before_ops = _count(workspace, "op")
 
     result = engine.capture()
 
@@ -54,7 +55,7 @@ def test_no_change_commits_nothing(workspace: WorkspaceHandle) -> None:
     assert result.revision == before_head
     assert _count(workspace, "revision") == 1
     assert _count(workspace, "object") == before_objects
-    assert _count(workspace, "op") == 0
+    assert _count(workspace, "op") == before_ops  # 无变化：不写新 Op
 
 
 def test_mtime_only_change_is_noop(workspace: WorkspaceHandle, skill_dir: Path) -> None:

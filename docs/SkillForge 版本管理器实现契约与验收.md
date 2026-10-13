@@ -82,6 +82,18 @@
 - **活动 Change**：同样无独立载体。分组由「本进程内上次提交时刻 + 单调时钟」派生，空闲满 30 分钟、打锚点或撤销后结束，服务重启自然开启新 Change（设计 §7.2）。这**不构成** TBD-09 所要求的持久化载体，重启后无法回溯旧活动 Change，故 TBD-09 仍未关闭。
 - **仍待冻结**：选中 Baseline 的持久化、当前 Op 指针与各 `kind` 的 before/after payload 格式。上述内容在 M-09/undo 开工前补样例，当前未实现。
 
+**第 3 周 A 草案（TBD-09，供 B 校验；关闭前不宣称「完整可撤销」）**：
+
+- **当前已提交 Revision**：派生，取该工作区 `seq` 最大的 `revision` 行（与 `last` 同源）；无新增载体。
+- **活动 Change**：仍为进程内派生（单调时钟 + 30 分钟空闲）；服务重启开启新 Change，不回溯。
+- **当前 Op**：派生，取 `op` 表该工作区 `rowid` 最大的行；无独立指针载体。
+- **Op 载荷格式 `v=1`**：规范 JSON（`canonical_json`，键排序、紧凑、非 ASCII 不转义），固定含 `v`。各 `kind`：
+  - `workspace.init`：`{v, revision_id, root_tree_oid, file_count}`。
+  - `snapshot`：`{v, revision_id, parent_rev_id, seq, trigger, message}`（`message` 可空）。
+  - `ref.set`：`{v, name, before_rev_id, after_rev_id}`（`before_rev_id` 首次为 `null`）。
+- **写入边界**：`op` 行在对应业务事务内插入（与 Revision/Change 同一事务）；无变化快照不写 `op`；提交失败随事务回滚，不留半条记录。
+- **仍待冻结（阻塞 undo/restore）**：选中 Baseline 的持久化载体（候选：`ref` 保留名 `baseline`，非本草案结论）、`undo/restore` 的补偿操作 kind 与 before/after 语义、重启后活动 Change 是否回填。这些关闭前不实现任何文件回写，也不注册 `undo/restore` 路由。
+
 ## 3. 对比输入、证据与报告
 
 ### 3.1 不可变输入与可复现身份
@@ -134,7 +146,7 @@ SourceSpan 固定为 `{path, start_byte, end_byte, text}`，偏移从 0 开始�
 
 ### 4.2 错误分类
 
-下列错误码多数已在 `src/skillforge_vm/core/errors.py` 定义业务错误类型；其中 `invalid_request / ref_not_found / revision_not_found / snapshot_unstable` 已于第 2 周随 M-02/M-04 落地使用，`workspace_busy / operation_failed` 仍待接口层实现。HTTP 映射整体为目标契约；带“（目标）”的行表示业务错误类型已定义但路由尚未实现，不代表已可被 HTTP 调用。新增错误码必须在此登记并与消费方对齐。
+下列错误码多数已在 `src/skillforge_vm/core/errors.py` 定义业务错误类型；`invalid_request / ref_not_found / revision_not_found / snapshot_unstable` 于第 2 周随 M-02/M-04 落地，第 3 周 M-10 已把全部已登记错误码接入统一外壳（含请求校验错误收敛为 `invalid_request`、未归类异常收敛为 `operation_failed`）。未实现路由相关的错误码仍不会被触发，但映射已就绪；`workspace_busy` 的错误类型与 409 映射已定义，跨进程互斥尚未接线（见 §6 缺口）。新增错误码必须在此登记并与消费方对齐。
 
 | code | HTTP | 意义 / 处理 |
 | --- | --- | --- |
@@ -145,11 +157,11 @@ SourceSpan 固定为 `{path, start_byte, end_byte, text}`，偏移从 0 开始�
 | object_store_not_writable | 507 | 对象存储不可写，停止提交并给出本地具体原因 |
 | object_not_found | 409 | 有效历史引用的对象缺失，不能完成对比 |
 | object_corrupted | 409 | 解压、头部、长度或 SHA-256 不匹配；停止本次报告 |
-| invalid_request（目标） | 422 | 参数类型、枚举、OID 语法或区间无效 |
-| ref_not_found / revision_not_found（目标） | 404 | 显式引用或修订不存在；不得替换成零基线 |
-| snapshot_unstable（目标） | 409 | 工作区持续变化导致本次无法捕获稳定内容，可重试 |
-| workspace_busy（目标） | 409 | 工作区/数据根已被另一服务写入，不启动第二写通道 |
-| operation_failed（目标） | 500 | 未归类异常；说明失败步骤与日志 request_id，不编造底层原因 |
+| invalid_request | 422 | 参数类型、枚举、OID 语法或区间无效（含框架校验错误） |
+| ref_not_found / revision_not_found | 404 | 显式引用或修订不存在；不得替换成零基线 |
+| snapshot_unstable | 409 | 工作区持续变化导致本次无法捕获稳定内容，可重试 |
+| workspace_busy | 409 | 工作区/数据根已被另一服务写入，不启动第二写通道（映射就绪，触发待接线） |
+| operation_failed | 500 | 未归类异常；说明失败步骤与日志 request_id，不编造底层原因 |
 
 `parse_failed / unsupported_encoding / text_limit_exceeded / unsupported_file_type` 是诊断 reason_code，不是整个 HTTP 请求失败码。只有内容不受支持/语法问题可降级；权限拒绝、磁盘满、对象缺失/损坏必须作为失败处理。
 
@@ -215,13 +227,21 @@ SourceSpan 固定为 `{path, start_byte, end_byte, text}`，偏移从 0 开始�
 | 2026-10-08 | init 改为可见标志最后发布（配置最后写） | 初始化失败不留下可见工作区，可安全重试（AC-01） |
 | 2026-10-08 | 新增业务错误码 `invalid_request / ref_not_found / revision_not_found / snapshot_unstable` | M-02/M-04 具体失败语义；HTTP 映射待接口层 |
 | 2026-10-08 | 补齐 Week 1 契约缺口：对象读回校验完整编码哈希、zlib 失败映射 `object_corrupted`；init 拒绝数据根位于 Skill 内 | 对齐设计 §3.2 M-03 读校验与契约 §2.1 纳管边界；此前代码未覆盖 AC-03/AC-16 |
+| 2026-10-13 | 新增 M-10 接口层：统一外壳 `{ok,data,error,request_id}`、request_id 中间件、错误码映射、SSE 事件通道 | 对齐设计 §3.2 M-10 / §4.6；请求校验错误收敛为 `invalid_request`、未归类异常收敛为 `operation_failed`；未实现路由一律不注册，避免占位成功响应 |
+| 2026-10-13 | 新增 M-12 CLI（服务客户端）：`start/init/workspaces/status/snapshot/log/show/tag/ops`；`start` 端口发现并写数据根 `runtime.json` | 对齐设计 §4.6/§4.7；修好 `skillforge-vm` 入口；业务命令只调服务，不直连数据库；`diff/undo` 仅以非零退出给出确切原因 |
+| 2026-10-13 | M-09 只实现「记录」，`undo/restore` 不实现、不注册 | TBD-08/TBD-09 未关闭；不臆造第二套状态协议，也不宣称文件已恢复 |
+| 2026-10-13 | Op 载荷格式 `v=1` 草案（快照/init/ref 三类）并随业务事务写入 | A 主责的 TBD-09 草案，见 §2.3；关闭前不宣称「完整可撤销」 |
 
 **本轮检查登记的实现缺口（不改变需求，待后续处理）**：
 
 - AC-15 目前只覆盖「提交失败不可见且可重试」，尚无真实进程强杀（提交前 / 对象写入中）的恢复证据。
 - EDGE-03「持续事件每 2 秒尝试稳定扫描」未实现：当前仅依赖 watchfiles 静默窗口，持续写入期间不产生中间尝试；稳定后仍不漏记。
 - `is_link_like` 的 junction 判定依赖 `Path.is_junction`（Python 3.12+）；在 3.11 上退化为仅查符号链接，junction 检测未生效。
-- 跨进程「单一写通道」`workspace_busy` 未实现：当前仅有进程内工作区级互斥（EDGE-15）。
+- 跨进程「单一写通道」`workspace_busy` 未实现：当前仅有进程内工作区级互斥（EDGE-15）；错误类型与 409 映射已就绪但无触发点。
 - init 失败不回滚孤儿数据目录：允许保留但未清理，重试会新建 `workspace_id`，旧目录成为不可达残留。
+- SSE 目前只推送 `snapshot/created`；`diff/ready`、`parse/degraded` 待 B 线 M-05/M-08 接入。事件为进程内广播，不承诺历史重放（契约 §4.3）。
+- `GET .../status` 的「是否有未纳管改动」按只读全量哈希判定，未做增量或缓存；大工作区性能未按 §4.8 测量。
+- CLI 的 `start` 端口发现为「先试首选端口、被占用则退系统分配」；未做 TOCTOU 抢占重试，`runtime.json` 由 `start` 单点写入，无并发写保护。
+- `workspace_url`/多工作区默认选择：CLI 未给 `--ws` 时仅在有唯一工作区时自动选择，未实现「按当前目录匹配」的隐式选择。
 
 后续变更使用最小记录：问题 → 决定 → 影响的契约/数据/验收 → 兼容或迁移 → 证据。新发现的实现缺口应登记为待办，不能反向修改需求把缺口描述成已完成。

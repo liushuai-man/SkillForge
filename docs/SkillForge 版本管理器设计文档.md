@@ -364,7 +364,7 @@ flowchart TB
 | TBD-06 | L3 与模型 | 已定：默认八类规则版；MVP 不接模型；后续仅可选聚类标签 | B；不得让模型生成差异或结论 |
 | TBD-07 | 清理与保留 | MVP 不自动删历史/报告；refcount 不是删除授权；保留根/宽限期在 gc 开工前另行冻结 | A/B；不阻塞 MVP |
 | TBD-08 | undo 是否写回用户文件 | **待产品决定**：现行 AGENTS 禁止写入，故当前只能设计版本库状态撤销，不能宣称能恢复编辑器文件 | 用户决定；M-09 文件恢复实施前必须关闭，见实现契约 §2 |
-| TBD-09 | 操作状态的持久化与恢复 | **待技术冻结**：定义当前 Revision、选中 Baseline、活动 Change、当前 Op 的载体与 before/after 状态；当前 DDL 尚无完整状态协议 | A 主责、B 消费方；M-04/M-09 写状态前补具体映射、失败重放样例和必要迁移方案 |
+| TBD-09 | 操作状态的持久化与恢复 | **部分冻结（A 草案）**：当前 Revision/活动 Change 走派生（不新增载体）；Op 载荷格式草案见实现契约 §2.3。**选中 Baseline 的载体、`undo/restore` 的补偿语义仍待冻结** | A 主责、B 消费方；草案已提出，Baseline 载体与 undo 补偿样例由 B 校验后关闭 |
 
 已定项仍是目标契约，不代表代码已满足；待决项只阻塞其依赖任务，不阻塞其他独立工作。任何新待决项必须写清负责人、影响范围和关闭条件，不能把“倾向方案”当成已经冻结的接口。
 
@@ -519,12 +519,14 @@ flowchart TB
 - 操作 DAG：每个操作记录父操作与前后状态引用。
 - `undo` 追加补偿操作，撤销撤销也追加记录；不删除既有 Revision/Op。`restore <op>` 的写入范围受 TBD-08/TBD-09 约束。
 - **不做物理删除**，直到回收执行。
+- 第 3 周实现：`workspace.init` / `snapshot` / `ref.set` 三类操作在对应业务事务内写入 `op` 表（与 Revision/Change 同一事务）；载荷为版本化规范 JSON `{"v":1, ...}`，格式见实现契约 §2.3（TBD-09 草案）。`undo` 与 `restore` 因 TBD-08/TBD-09 未关闭**未实现**，也不注册占位接口。
 
 ### M-10 / M-11 / M-12
 
 - 接口层：统一返回外壳、具体错误码、事件流（快照就绪 / 对比完成 / 降级发生）。
 - 界面：MVP 提供结论、语义/文本两视图、待确认标记与基础历史列表；独立结构视图和增强时间线后续做。
 - 命令行：与服务完全等价；`diff` 默认 `Working vs Baseline`。
+- 第 3 周实现：M-10 落地工作区/状态/快照/修订/变更/引用/操作日志路由与 SSE（统一外壳 `{ok,data,error,request_id}`，错误码映射见契约 §4.2）；M-12 提供 `start / init / workspaces / status / snapshot / log / show / tag / ops`，仅作服务客户端。依赖 M-05/M-08 的 `diff`、`range-diff`、报告导出与预留的 `behavior-diff`，以及受 TBD-08/TBD-09 阻塞的 `undo/restore` 均**未注册**，避免出现占位成功响应（设计 §4.6）。
 
 ### M-13 行为对比适配器（预留）
 
@@ -703,22 +705,30 @@ flowchart LR
 
 路由表均相对 `/api`；成功 `error=null`，失败 `data=null`，错误结构固定为 `{code,message,detail}`。错误码、HTTP 映射、默认参数及事件交付语义见实现契约 §4。本节后续接口不构成 MVP 开工授权，不能注册空壳成功响应。
 
-| 要干什么 | 接口 |
-| --- | --- |
-| 建工作区 | `POST /workspaces` |
-| 工作区状态（是否有未纳管改动） | `GET /workspaces/{ws}/status` |
-| 手动快照（message 可空） | `POST /workspaces/{ws}/snapshots` |
-| 修订列表 | `GET /workspaces/{ws}/revisions` |
-| 修订详情 | `GET /workspaces/{ws}/revisions/{rev}` |
-| 变更列表 | `GET /workspaces/{ws}/changes` |
-| 对比（核心） | `GET /workspaces/{ws}/diff?base=&head=&layer=` |
-| 对比概览 | `GET /workspaces/{ws}/diff/summary?base=&head=` |
-| 区间对比（后续） | `GET /workspaces/{ws}/range-diff?from=&to=` |
-| 打锚点 | `POST /workspaces/{ws}/refs` |
-| 撤销 | `POST /workspaces/{ws}/ops/{op}/undo` |
-| 恢复状态（先关闭 TBD-08/09） | `POST /workspaces/{ws}/ops/{op}/restore` |
-| 报告导出（后续） | `GET /reports/{report_id}/export?format=md\|json` |
-| 行为对比（预留） | `POST /workspaces/{ws}/behavior-diff` |
+**第 3 周实现状态**：下表标注 ✅ 的路由已有真实实现并返回统一外壳；其余为后续项（依赖 B 线的 M-05/M-08，或 TBD-08/TBD-09），本轮**不注册**。`workspace_busy` 的错误类型与 HTTP 映射已就绪，跨进程互斥尚未接线（见实现契约 §6 缺口）。
+
+| 要干什么 | 接口 | 状态 |
+| --- | --- | --- |
+| 健康检查（CLI/探活） | `GET /health` | ✅ |
+| 建工作区 | `POST /workspaces` | ✅ |
+| 列出工作区 | `GET /workspaces` | ✅ |
+| 工作区详情 | `GET /workspaces/{ws}` | ✅ |
+| 工作区状态（是否有未纳管改动） | `GET /workspaces/{ws}/status` | ✅ |
+| 手动快照（message 可空） | `POST /workspaces/{ws}/snapshots` | ✅ |
+| 修订列表 | `GET /workspaces/{ws}/revisions` | ✅ |
+| 修订详情 | `GET /workspaces/{ws}/revisions/{rev}` | ✅ |
+| 变更列表 | `GET /workspaces/{ws}/changes` | ✅ |
+| 打锚点 | `POST /workspaces/{ws}/refs` | ✅ |
+| 锚点列表 | `GET /workspaces/{ws}/refs` | ✅ |
+| 操作日志 | `GET /workspaces/{ws}/ops` | ✅ |
+| 事件流 | `GET /workspaces/{ws}/events` | ✅（SSE） |
+| 对比（核心） | `GET /workspaces/{ws}/diff?base=&head=&layer=` | 待 B 线 M-05/M-08 |
+| 对比概览 | `GET /workspaces/{ws}/diff/summary?base=&head=` | 待 B 线 |
+| 区间对比 | `GET /workspaces/{ws}/range-diff?from=&to=` | 后续 |
+| 撤销 | `POST /workspaces/{ws}/ops/{op}/undo` | 待 TBD-08/TBD-09 |
+| 恢复状态 | `POST /workspaces/{ws}/ops/{op}/restore` | 待 TBD-08/TBD-09 |
+| 报告导出 | `GET /reports/{report_id}/export?format=md\|json` | 后续 |
+| 行为对比（预留） | `POST /workspaces/{ws}/behavior-diff` | 预留，零实现 |
 
 **事件流**：`GET /workspaces/{ws}/events`，提交后推送 `snapshot/created`、`diff/ready`、`parse/degraded`；`gc/done` 为后续事件。事件是通知，数据库与状态接口是真值；断线重连先重取状态，不承诺持久消息队列语义。
 
@@ -739,6 +749,8 @@ skillforge-vm export --md          # 后续：导出报告
 ```
 
 > **CLI 只是服务的客户端**：它不直接读写数据库，所以 `skillforge-vm diff` 与网页上点按钮**完全等价**。
+
+**第 3 周实现状态**：`start / init / workspaces / status / snapshot / log / show / tag / ops` 已可用；`--url` 未给时按「环境变量 `SKILLFORGE_VM_URL` → 数据根 `runtime.json`（`start` 写入实际端口）→ 默认 `127.0.0.1:8756`」解析。`diff` 与 `undo` 作为命令存在，但会以非零退出并给出确切原因（分别待 B 线、待 TBD-08/TBD-09），不返回伪造成功。
 
 ## 4.7 运行与部署形态
 

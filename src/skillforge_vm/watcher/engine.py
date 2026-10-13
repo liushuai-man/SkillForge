@@ -25,6 +25,8 @@ from ..core.types import (
 from ..db.connection import connect, transaction
 from ..objectstore.index import ObjectIndex
 from ..objectstore.store import DirectoryWriteResult, ObjectStore
+from ..oplog.models import OpKind
+from ..oplog.store import OpStore
 from ..revision.identity import new_change_id, revision_meta_payload
 from ..revision.models import Revision
 from ..revision.store import RevisionStore
@@ -74,11 +76,15 @@ class SnapshotEngine:
         *,
         trigger: SnapshotTrigger = SnapshotTrigger.WATCH,
         source: SnapshotSource = SnapshotSource.EDIT,
+        message: str | None = None,
     ) -> SnapshotResult:
-        """串行捕获一次快照；无变化时返回当前修订且不写任何业务元数据。"""
+        """串行捕获一次快照；无变化时返回当前修订且不写任何业务元数据。
+
+        ``message`` 是手动快照的可选注解，只进入操作日志，不绕过无变化规则（§7.2）。
+        """
         ws_id = self._handle.workspace_id
         with _lock_for(ws_id):
-            return self._capture(ws_id, trigger, source)
+            return self._capture(ws_id, trigger, source, message)
 
     def end_active_change(self) -> None:
         """显式边界（打锚点 / 撤销）后，下次内容变化另起 Change（§7.2）。"""
@@ -89,6 +95,7 @@ class SnapshotEngine:
         ws_id: str,
         trigger: SnapshotTrigger,
         source: SnapshotSource,
+        message: str | None,
     ) -> SnapshotResult:
         root = Path(self._handle.config.root_path)
         ignore = self._handle.config.ignore.ignores
@@ -140,6 +147,18 @@ class SnapshotEngine:
                 else:
                     revisions.extend_change(ws_id, change_id, revision.rev_id)
                 revisions.index_paths(revision.rev_id, written.files)
+                # M-09：操作日志与 Revision 同一事务提交（§2.2）；无变化时不写。
+                OpStore(conn).record(
+                    ws_id=ws_id,
+                    kind=OpKind.SNAPSHOT,
+                    payload={
+                        "revision_id": revision.rev_id,
+                        "parent_rev_id": revision.parent_rev_id,
+                        "seq": revision.seq,
+                        "trigger": revision.trigger,
+                        "message": message,
+                    },
+                )
 
             self._active_change_id = change_id
             self._last_commit_at = self._clock()

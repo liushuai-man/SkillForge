@@ -68,3 +68,15 @@ class RevisionNotFoundError(SkillForgeVMError):
     """显式请求的修订不存在（404）。"""
 
     code = "revision_not_found"
+
+
+class WorkspaceBusyError(SkillForgeVMError):
+    """同一数据根/工作区已被另一写通道占用，不启动第二写通道（409）。"""
+
+    code = "workspace_busy"
+
+
+class OperationFailedError(SkillForgeVMError):
+    """未归类异常：说明失败步骤，不编造底层原因（500）。"""
+
+    code = "operation_failed"

@@ -29,6 +29,8 @@ from ..core.types import (
 from ..db.connection import connect, init_schema, transaction
 from ..objectstore.index import ObjectIndex
 from ..objectstore.store import ObjectStore
+from ..oplog.models import OpKind
+from ..oplog.store import OpStore
 from ..revision.identity import new_change_id, revision_meta_payload
 from ..revision.models import Revision
 from ..revision.store import RevisionStore
@@ -157,6 +159,17 @@ class WorkspaceManager:
                 revisions.insert(revision)
                 revisions.start_change(config.workspace_id, change_id, revision.rev_id)
                 revisions.index_paths(revision.rev_id, written.files)
+                # M-09：初始化也是操作日志的一条记录（§2.2）。
+                OpStore(conn).record(
+                    ws_id=config.workspace_id,
+                    kind=OpKind.WORKSPACE_INIT,
+                    payload={
+                        "revision_id": revision.rev_id,
+                        "root_tree_oid": written.root.oid,
+                        "file_count": len(written.files),
+                    },
+                    ts=config.created_at,
+                )
         finally:
             conn.close()
 
