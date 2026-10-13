@@ -158,7 +158,11 @@ def test_no_change_creates_no_plan(recovery):
         conn.close()
 
 
-def test_path_traversal_in_tree_is_rejected(recovery):
+@pytest.mark.parametrize(
+    "name",
+    ["../escape", "bad?.md", 'bad".md', "bad\x01.md", "bad|.md", "bad*.md", "bad<.md", "bad>.md"],
+)
+def test_unsafe_tree_path_is_rejected(recovery, name):
     from skillforge_vm.core.errors import ObjectCorruptedError
     from skillforge_vm.objectstore.objects import TreeEntry
     from skillforge_vm.revision.content import read_tree
@@ -166,9 +170,68 @@ def test_path_traversal_in_tree_is_rejected(recovery):
     _, handle, engine, _, _ = recovery
     executor = RestoreExecutor(handle, engine)
     blob = executor.objects.write_blob(b"escape")
-    tree = executor.objects.write_tree([TreeEntry("../escape", "100644", blob.oid)])
+    tree = executor.objects.write_tree([TreeEntry(name, "100644", blob.oid)])
     with pytest.raises(ObjectCorruptedError):
         read_tree(executor.objects, tree.oid)
+
+
+@pytest.mark.parametrize("corrupted", [False, True])
+def test_partial_staging_file_is_resumable_unless_modified(recovery, monkeypatch, corrupted):
+    root, handle, engine, original, before = recovery
+    executor = RestoreExecutor(handle, engine)
+    plan = executor.preview(before.rev_id, original.rev_id)
+    stage = next(iter(executor._stages(plan)))
+
+    def interrupt(plan):
+        (root / stage).write_bytes(b"external" if corrupted else b"ori")
+        raise OSError("staging interrupted")
+
+    monkeypatch.setattr(executor, "_apply_files", interrupt)
+    with pytest.raises(OSError):
+        executor.apply(plan.plan_id)
+    restarted = RestoreExecutor(handle, SnapshotEngine(handle))
+    if corrupted:
+        with pytest.raises(RestoreConflictError, match="临时文件"):
+            restarted.apply(plan.plan_id)
+        assert (root / stage).read_bytes() == b"external"
+        assert (root / "a.md").read_bytes() == b"edited"
+    else:
+        assert restarted.apply(plan.plan_id).revision.root_tree_oid == original.root_tree_oid
+        assert not (root / stage).exists()
+
+
+def test_restore_rejects_file_directory_conversion(recovery):
+    root, handle, engine, original, _ = recovery
+    (root / "a.md").unlink()
+    (root / "a.md").mkdir()
+    (root / "a.md" / "keep.txt").write_bytes(b"keep")
+    before = engine.capture().revision
+    with pytest.raises(RestoreConflictError, match="类型转换"):
+        RestoreExecutor(handle, engine).preview(before.rev_id, original.rev_id)
+    assert (root / "a.md" / "keep.txt").read_bytes() == b"keep"
+
+
+def test_restore_rejects_case_only_rename(recovery):
+    root, handle, engine, original, _ = recovery
+    (root / "a.md").rename(root / "A.md")
+    before = engine.capture().revision
+    with pytest.raises(RestoreConflictError, match="大小写"):
+        RestoreExecutor(handle, engine).preview(before.rev_id, original.rev_id)
+
+
+def test_restore_rejects_link_at_target(recovery, tmp_path):
+    root, handle, engine, original, before = recovery
+    executor = RestoreExecutor(handle, engine)
+    plan = executor.preview(before.rev_id, original.rev_id)
+    outside = tmp_path / "outside.txt"
+    outside.write_bytes(b"outside")
+    try:
+        (root / "removed.md").symlink_to(outside)
+    except OSError:
+        pytest.skip("当前环境不允许创建符号链接")
+    with pytest.raises(RestoreConflictError):
+        executor.apply(plan.plan_id)
+    assert outside.read_bytes() == b"outside"
 
 
 def _restore_worker(data_root, ws, plan_id, phase, pipe):

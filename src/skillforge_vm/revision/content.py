@@ -15,9 +15,7 @@ def safe_relative(path: str) -> None:
         or PurePosixPath(path).is_absolute()
         or any(
             p in ("", ".", "..")
-            or "\\" in p
-            or ":" in p
-            or "\x00" in p
+            or any(char in '\\:<>"|?*' or ord(char) < 32 for char in p)
             or p.endswith((".", " "))
             or PureWindowsPath(p).is_reserved()
             for p in parts

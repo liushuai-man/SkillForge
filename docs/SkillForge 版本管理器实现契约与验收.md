@@ -110,6 +110,8 @@ TBD-08 已关闭：自动纳管仍不写 Skill；用户明确发起、预览文�
 
 - API/CLI 接入验收：API 仅接受布尔 confirm=true；false、缺失、字符串或数字均 422。预览响应为 no_change/plan_id/changes；有变化时附 before_rev/target_rev/action，无变化不创建计划。apply 返回 plan_id/created/revision；created=false 表示此前已完成、本次无回写，不代表当前磁盘仍处于该历史状态。pending 时显式指定修订的打锚点也拒绝。CLI 取消不调用 apply；status 给出续作命令。
 
+- 恢复路径补充验收：历史 tree 非法 Windows 名称与控制字符在预检拒绝；临时文件写入中断后可续作，被其他内容改写则保留并拒绝；文件/目录转换及仅大小写改名拒绝。符号链接冲突用真实链接测试，环境不允许创建链接时明确跳过，不能记作通过。v1 每步全量复核的批量恢复性能尚未验收。
+
 ## 3. 对比输入、证据与报告
 
 ### 3.1 不可变输入与可复现身份
