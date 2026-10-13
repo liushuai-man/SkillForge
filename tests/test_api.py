@@ -206,3 +206,33 @@ async def test_service_lifecycle_watches_new_and_existing_workspaces(
         assert restarted.status(ws)["head_seq"] == 3
         assert not restarted.status(ws)["has_pending_changes"]
     assert not restarted._watchers
+
+
+async def test_tag_captures_current_files_and_ends_change(
+    client: httpx.AsyncClient, skill_dir: Path
+) -> None:
+    ws = (await _init(client, skill_dir))["data"]["workspace"]["workspace_id"]
+    (skill_dir / "SKILL.md").write_text("# uncommitted", encoding="utf-8")
+    tag = (await client.post(f"/api/workspaces/{ws}/refs", json={"name": "tested"})).json()
+    head = (await client.get(f"/api/workspaces/{ws}/revisions/last")).json()["data"]
+    assert head["seq"] == 2
+    assert tag["data"]["rev_id"] == head["rev_id"]
+    (skill_dir / "SKILL.md").write_text("# next change", encoding="utf-8")
+    next_rev = (await client.post(f"/api/workspaces/{ws}/snapshots", json={})).json()["data"]
+    assert next_rev["revision"]["change_id"] != head["change_id"]
+    refs = (await client.get(f"/api/workspaces/{ws}/refs")).json()["data"]
+    assert next(ref for ref in refs if ref["name"] == "tested")["rev_id"] == head["rev_id"]
+
+
+async def test_event_subscriptions_are_scoped_and_bounded() -> None:
+    bus = EventBus()
+    a, b = bus.subscribe("a"), bus.subscribe("b")
+    for seq in range(200):
+        bus.publish({"workspace_id": "a", "seq": seq})
+    await asyncio.sleep(0)
+    assert b.empty()
+    assert a.qsize() == 128
+    events = [a.get_nowait() for _ in range(a.qsize())]
+    assert events[-1]["seq"] == 199
+    bus.unsubscribe(a)
+    bus.unsubscribe(b)

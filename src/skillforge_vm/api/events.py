@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from typing import Any
 
 # 事件类型：MVP 落地 snapshot/created；diff/ready、parse/degraded 待 M-05 接入后补。
@@ -17,26 +18,39 @@ class EventBus:
     """单进程广播：发布方可能来自线程池，订阅方是 asyncio 队列。"""
 
     def __init__(self) -> None:
-        self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
-        self._loop: asyncio.AbstractEventLoop | None = None
+        self._subscribers: dict[
+            asyncio.Queue[dict[str, Any]], tuple[asyncio.AbstractEventLoop, str | None]
+        ] = {}
+        self._guard = threading.Lock()
 
-    def subscribe(self) -> asyncio.Queue[dict[str, Any]]:
+    def subscribe(self, workspace_id: str | None = None) -> asyncio.Queue[dict[str, Any]]:
         """在异步端点内订阅；顺带绑定当前事件循环。"""
-        try:
-            self._loop = asyncio.get_running_loop()
-        except RuntimeError:  # pragma: no cover - 只可能在无循环的同步上下文调用
-            self._loop = None
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
-        self._subscribers.add(queue)
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=128)
+        with self._guard:
+            self._subscribers[queue] = (loop, workspace_id)
         return queue
 
     def unsubscribe(self, queue: asyncio.Queue[dict[str, Any]]) -> None:
-        self._subscribers.discard(queue)
+        with self._guard:
+            self._subscribers.pop(queue, None)
 
     def publish(self, event: dict[str, Any]) -> None:
         """发布事件；线程安全地投递到已订阅队列。"""
-        for queue in list(self._subscribers):
-            if self._loop is not None:
-                self._loop.call_soon_threadsafe(queue.put_nowait, event)
-            else:  # pragma: no cover - 无订阅者时无需投递
-                queue.put_nowait(event)
+        with self._guard:
+            subscribers = list(self._subscribers.items())
+        for queue, (loop, workspace_id) in subscribers:
+            if workspace_id is not None and event.get("workspace_id") != workspace_id:
+                continue
+            try:
+                loop.call_soon_threadsafe(self._deliver, queue, dict(event))
+            except RuntimeError:
+                self.unsubscribe(queue)  # 已关闭的消费循环不影响业务提交
+
+    def _deliver(self, queue: asyncio.Queue, event: dict[str, Any]) -> None:
+        with self._guard:
+            if queue not in self._subscribers:
+                return
+        if queue.full():
+            queue.get_nowait()  # 通知允许丢弃旧项，状态接口始终是真值
+        queue.put_nowait(event)

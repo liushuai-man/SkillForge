@@ -12,7 +12,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Any
 
-from ..core.errors import RefNotFoundError, RevisionNotFoundError
+from ..core.errors import InvalidRequestError, RefNotFoundError, RevisionNotFoundError
 from ..core.locking import DataRootLock
 from ..core.types import ObjectType, SnapshotSource, SnapshotTrigger
 from ..db.connection import connect, transaction
@@ -21,7 +21,7 @@ from ..oplog.models import OpKind
 from ..oplog.store import OpStore
 from ..revision.models import Ref
 from ..revision.revset import resolve_revset
-from ..revision.store import RevisionStore
+from ..revision.store import RESERVED_REF_NAMES, RevisionStore
 from ..watcher.engine import SnapshotEngine
 from ..watcher.scanner import scan_files
 from ..watcher.watcher import WorkspaceWatcher
@@ -190,10 +190,7 @@ class WorkspaceService:
     def _committed_files(self, handle: WorkspaceHandle, rev_id: str) -> dict[str, tuple[str, str]]:
         conn = connect(handle.paths.db_file)
         try:
-            rows = conn.execute(
-                "SELECT path, oid, mode FROM blob_index WHERE rev_id = ?", (rev_id,)
-            ).fetchall()
-            return {row["path"]: (row["oid"], row["mode"]) for row in rows}
+            return RevisionStore(conn).files(rev_id)
         finally:
             conn.close()
 
@@ -262,7 +259,11 @@ class WorkspaceService:
 
     @_serialized
     def set_ref(self, ws_id: str, name: str, rev_spec: str | None = None) -> dict[str, Any]:
+        if not name.strip() or name in RESERVED_REF_NAMES:
+            raise InvalidRequestError(f"引用名为空或为只读别名：{name}", detail=name)
         handle = self._handle(ws_id)
+        if rev_spec is None or rev_spec.split("~", 1)[0] == "@":
+            self.snapshot(ws_id)
         conn = connect(handle.paths.db_file)
         try:
             store = RevisionStore(conn)

@@ -170,6 +170,13 @@ class RevisionStore:
 
     # ---- 路径索引 ----
 
+    def files(self, rev_id: str) -> dict[str, tuple[str, str]]:
+        """已提交修订的路径 → (blob OID, mode)，供状态读取使用。"""
+        rows = self._conn.execute(
+            "SELECT path, oid, mode FROM blob_index WHERE rev_id = ?", (rev_id,)
+        )
+        return {row["path"]: (row["oid"], row["mode"]) for row in rows}
+
     def index_paths(self, rev_id: str, files: list[FileBlob]) -> None:
         """记录该修订下每个文件路径对应的 blob（便于按路径查历史）。"""
         self._conn.executemany(

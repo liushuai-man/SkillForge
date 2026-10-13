@@ -123,7 +123,7 @@ def create_app(
     @router.get("/workspaces/{ws_id}/events")
     async def events(ws_id: str, request: Request) -> EventSourceResponse:
         service.get_workspace(ws_id)  # 未知工作区尽早失败
-        queue = service.bus.subscribe()
+        queue = service.bus.subscribe(ws_id)
 
         async def _generate() -> Any:
             try:

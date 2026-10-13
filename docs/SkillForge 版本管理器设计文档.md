@@ -459,6 +459,8 @@ flowchart TB
 - **revset 解析器**：MVP 仅 `@`、`last`、完整 Revision ID、`<ref>`、`<rev-or-ref>~N`；不支持 `stable-1` 这类别名或完整表达式语言。`A..B` 与区间分析后续实现。
 - 当前状态、基线选择和活动 Change 的持久化须先关闭 TBD-09；不得由接口层与存储层分别保存一套真值。
 
+- Week 4：默认打锚点先在服务串行范围内捕获当前稳定内容，然后提交 ref + Op 并结束活动 Change；显式历史引用不推进文件快照。路径索引由 RevisionStore.files 公开读取，上层不拼 SQL。选中 Baseline 仍待 TBD-09，不把命名 ref 等同已选基线。
+
 ### M-05 分层对比引擎
 
 | 层 | 输入 | 输出 | 成本 |
@@ -735,7 +737,7 @@ flowchart LR
 | 报告导出 | `GET /reports/{report_id}/export?format=md\|json` | 后续 |
 | 行为对比（预留） | `POST /workspaces/{ws}/behavior-diff` | 预留，零实现 |
 
-**事件流**：工作区订阅仅输出该工作区的通知；服务自动快照与手动快照共用提交后发布入口。`GET /workspaces/{ws}/events`，提交后推送 `snapshot/created`、`diff/ready`、`parse/degraded`；`gc/done` 为后续事件。事件是通知，数据库与状态接口是真值；断线重连先重取状态，不承诺持久消息队列语义。
+**事件流**：工作区订阅仅输出该工作区的通知；每订阅最多积压 128 条，慢消费者丢弃最旧通知并保留最新通知；服务自动快照与手动快照共用提交后发布入口。`GET /workspaces/{ws}/events`，提交后推送 `snapshot/created`、`diff/ready`、`parse/degraded`；`gc/done` 为后续事件。事件是通知，数据库与状态接口是真值；断线重连先重取状态，不承诺持久消息队列语义。
 
 **命令行：**
 
