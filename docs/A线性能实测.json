@@ -1,0 +1,57 @@
+{
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.12.15",
+  "cache": "同进程，OS缓存未清空；无报告缓存",
+  "physical_medium": "未识别",
+  "allocated_bytes": null,
+  "seed": 20261013,
+  "volume": "C:",
+  "sequence": {
+    "saves": 10000,
+    "files": 1,
+    "bytes": 1024,
+    "created": {
+      "unchanged": 0,
+      "historical": 3332,
+      "unique": 3333
+    },
+    "timing": {
+      "unchanged": {
+        "count": 3334,
+        "p50_ms": 30.957,
+        "p95_ms": 50.616
+      },
+      "historical": {
+        "count": 3333,
+        "p50_ms": 15.592,
+        "p95_ms": 42.152
+      },
+      "unique": {
+        "count": 3333,
+        "p50_ms": 45.032,
+        "p95_ms": 84.328
+      }
+    },
+    "unique_objects": 13336,
+    "compressed_bytes": 2509115,
+    "revisions": 6666,
+    "indexed_objects": 13336,
+    "database_bytes": 10956800
+  },
+  "unique_1mib": {
+    "files": 1,
+    "bytes": 1048576,
+    "capture_including_scan": {
+      "count": 30,
+      "p50_ms": 39.9,
+      "p95_ms": 51.481
+    },
+    "readonly_status": {
+      "count": 30,
+      "p50_ms": 23.132,
+      "p95_ms": 41.666
+    },
+    "compressed_growth_bytes": 31480013,
+    "note": "全量捕获含扫描，比纯写入计时范围更大；30次不同随机完整blob，不代表行级增量"
+  }
+}
