@@ -56,10 +56,44 @@ def test_cli_help_lists_commands() -> None:
     assert "init" in result.output
 
 
-@pytest.mark.parametrize("command", ["diff", "undo"])
-def test_blocked_commands_exit_nonzero(command: str) -> None:
-    result = CliRunner().invoke(app, [command])
+def test_unimplemented_diff_exits_nonzero() -> None:
+    result = CliRunner().invoke(app, ["diff"])
     assert result.exit_code == 1
+
+
+@pytest.mark.parametrize("command", [["restore", "tested"], ["undo"], ["restore", "--resume", "p"]])
+@pytest.mark.parametrize("answer", ["n\n", "y\n"])
+def test_restore_cli_confirmation(monkeypatch, command, answer):
+    from skillforge_vm.cli import main as cli
+
+    calls = []
+    plan = {
+        "no_change": False,
+        "plan_id": "p",
+        "before_rev": "b",
+        "target_rev": "a",
+        "changes": [{"path": "a.md", "action": "modify"}],
+    }
+
+    def get(self, path):
+        return [{"workspace_id": "w"}] if path == "/api/workspaces" else plan
+
+    def post(self, path, payload):
+        calls.append((path, payload))
+        if path.endswith("/apply"):
+            return {"created": True, "revision": {"rev_id": "c", "seq": 3}}
+        return plan
+
+    monkeypatch.setattr(cli.VmClient, "get", get)
+    monkeypatch.setattr(cli.VmClient, "post", post)
+    result = CliRunner().invoke(app, command, input=answer)
+    assert result.exit_code == 0, result.output
+    assert "a.md" in result.output
+    applies = [call for call in calls if call[0].endswith("/apply")]
+    assert applies == (
+        [("/api/workspaces/w/restore/plans/p/apply", {"confirm": True})] if answer == "y\n" else []
+    )
+    assert ("恢复完成" if answer == "y\n" else "未回写") in result.output
 
 
 def test_fail_raises_exit_one() -> None:

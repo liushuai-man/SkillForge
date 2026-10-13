@@ -3,7 +3,7 @@
 日期：2026-10-13。范围：A 线现有能力修复、运行可靠性、安装产物与验收证据。
 
 **结论：可供本机试用和两线联调的 A 线安装包已生成；完整产品 G2/G3 尚未通过。**
-语义报告/对比界面依赖 B 线，Baseline/undo/restore 仍受 TBD-08/09 约束。
+语义报告/对比界面依赖 B 线，Baseline 选择仍受 TBD-09 约束。2026-10-13 用户批准的受控 restore/undo 已实现，接口与边界见实现契约 §2.4。
 本文记录实际结果，不替代设计 §8.1 范围或实现契约 §5 验收标准。
 
 ## 已实现与提交
@@ -75,8 +75,8 @@ uv run --no-sync python scripts/verify_release.py dist/skillforge_vm-0.1.0-py3-n
 
 ## 未验证与待决
 
-- TBD-08：是否允许 undo 写回用户 Skill 文件，仍待用户决定；本轮未回写真实 Skill。
-- TBD-09：选中 Baseline 的持久化与补偿操作仍待 A/B 冻结；命名锚点不等于已选 Baseline，undo/restore 未实现。
+- TBD-08 已关闭：用户批准显式预览确认后的整 Skill 恢复及撤销最近恢复；验证仅使用生成的测试 Skill。
+- TBD-09：选中 Baseline 的持久化仍待 A/B 冻结；命名锚点不等于已选 Baseline；恢复子协议已冻结并实现，不表示 Baseline 完成。
 - B 线语义/文本报告、实际对比 UI、跨线报告一致性与消费验收未完成；G0 完整交接证据亦不能由 A 单独签署。
 - macOS/Linux、Python 3.11、符号链接/junction 实机矩阵、断电、对象临时文件半写与 init 发布窗口强杀尚未全部覆盖。
 - 干净机器/pipx 安装、断网机器运行、最大容量与实际分配空间尚未验证。

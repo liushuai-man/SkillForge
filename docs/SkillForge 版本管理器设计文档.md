@@ -175,7 +175,7 @@ flowchart TB
 | S-1 | 刚改完一段提示词，想知道到底改了哪几处 | 一份"只说人话"的语义差异 |
 | S-2 | 连续改了两个小时，中间保存了几十次 | 把这些散碎改动**折叠成几条有意义的变更** |
 | S-3 | 想确认"这周相对上周稳定版，总共动了什么" | 区间对比 |
-| S-4 | 改坏了，想查看或恢复 20 分钟前的状态 | 版本库状态可撤销；是否回写用户文件须先关闭 TBD-08 |
+| S-4 | 改坏了，想查看或恢复 20 分钟前的状态 | 指定修订可预览确认后恢复；可撤销最近一次恢复，见实现契约 §2.4 |
 | S-5 | 想把某个状态标记为"已验证" | 打一个锚点，不建正式版本 |
 | S-6 | 想在 PR / issue 里说明这次改动 | 一份可粘贴、可复现的报告 |
 | S-7 | 想知道这次改动影响了哪些被引用的文件 | 影响面提示 |
@@ -197,8 +197,8 @@ flowchart TB
 11:00  觉得可以了 → 点一下「标记为已验证」
        → 打上 ref = tested，Baseline 自动前移
 
-14:00  又改，改坏了 → skillforge-vm undo
-       → 撤销上一步已记录的版本库操作；文件写回边界见 TBD-08，不能据此假定已恢复编辑器中的文件
+14:00  又改，改坏了 → skillforge-vm restore tested
+       → 预览确认后恢复到锚点；若想回到恢复前，再运行 skillforge-vm undo 并确认
 ```
 
 **硬规则**：整条旅程里，用户**没有**执行 add / commit / 写 message / 选基线 / 选对比对象。
@@ -268,7 +268,7 @@ flowchart TB
 | 编号 | 需求 | 验收标准 |
 | --- | --- | --- |
 | FR-06.1 | 记录所有操作 | 快照、打标、回退等操作全部记录，带父子关系 |
-| FR-06.2 | 一键撤销 | 追加补偿操作恢复上一步版本库状态，**包括撤销撤销**；文件写回由 TBD-08 单独约束 |
+| FR-06.2 | 一键撤销 | 预览确认后恢复最近一次文件恢复前的内容，**包括撤销撤销**；有后续内容修订则拒绝覆盖，见实现契约 §2.4 |
 | FR-06.3 | 状态可跳转 | 可查看历史操作点；恢复操作的状态载荷和写入边界按实现契约 §2 冻结后实现 |
 | FR-06.4 | 不丢数据 | 未被显式清理的对象不因撤销而永久丢失 |
 
@@ -289,7 +289,7 @@ flowchart TB
 | 编号 | 需求 | 验收标准 |
 | --- | --- | --- |
 | FR-08.1 | CLI 与网页等价 | CLI 不直接读写数据库，只调服务，结果完全等价 |
-| FR-08.2 | 核心命令 | MVP：`start / init / status / snapshot / diff / log / tag / undo / show`；`range-diff / export` 后续实现 |
+| FR-08.2 | 核心命令 | MVP：`start / init / status / snapshot / diff / log / tag / restore / undo / show`；`range-diff / export` 后续实现 |
 | FR-08.3 | 统一返回外壳 | `ok / data / error / request_id` 四段式 |
 | FR-08.4 | 具体错误 | 错误说明原因（如 `工作区未初始化`、`对象库不可写`）；解析降级是报告诊断，不能混成整个请求失败 |
 
@@ -528,15 +528,17 @@ flowchart TB
 ### M-09 操作日志与撤销
 
 - 操作 DAG：每个操作记录父操作与前后状态引用。
-- `undo` 追加补偿操作，撤销撤销也追加记录；不删除既有 Revision/Op。`restore <op>` 的写入范围受 TBD-08/TBD-09 约束。
+- `undo` 追加补偿操作，撤销撤销也追加记录；不删除既有 Revision/Op。`restore <rev>` 的写入范围见实现契约 §2.4；不提供任意 Op 跳转。
 - **不做物理删除**，直到回收执行。
 - 第 3 周实现：`workspace.init` / `snapshot` / `ref.set` 三类操作在对应业务事务内写入 `op` 表（与 Revision/Change 同一事务）；载荷为版本化规范 JSON `{"v":1, ...}`，格式见实现契约 §2.3（TBD-09 草案）。`undo` 与 `restore` 因 TBD-08/TBD-09 未关闭**未实现**，也不注册占位接口。
 
 - Week 4 恢复验收：对象发布后、事务提交前、提交后返回前的真实进程强杀均要求重启只见完整已提交状态；重试不得重复生成 Revision/Op。只覆盖进程强杀，不等同断电保证。
 
-- 2026-10-13 恢复 v1 核心已实现（API/CLI 接入另验）：先预览确认、保存当前内容，再受控回写纳管文件；restore.plan/begin/done 使用现有 Op 表，pending 阻断普通快照，完成记录与新 Revision 同事务。指定修订恢复及撤销最近恢复的语义以实现契约 §2.4 为唯一真值；不包含撤销锚点或任意 Op 跳转。
+- 2026-10-13 恢复 v1 核心及 API/CLI 已实现：先预览确认、保存当前内容，再受控回写纳管文件；restore.plan/begin/done 使用现有 Op 表，pending 阻断普通快照，完成记录与新 Revision 同事务。指定修订恢复及撤销最近恢复的语义以实现契约 §2.4 为唯一真值；不包含撤销锚点或任意 Op 跳转。
 
 ### M-10 / M-11 / M-12
+
+- 2026-10-13 M-10/M-12 恢复 v1 已接入：恢复预览、撤销预览、计划读取与确认执行四个入口；CLI `restore REV`、`restore --resume PLAN`、`undo` 展示清单后确认，自动化可显式 `--yes`。status 显示 pending 计划及续作命令；拒绝非布尔确认、过期计划和恢复后的新改动。验收见实现契约 §2.4，M-11 尚未接入。下述第 3 周描述为历史状态。
 
 - 接口层：统一返回外壳、具体错误码、事件流（快照就绪 / 对比完成 / 降级发生）。
 - 界面：MVP 提供结论、语义/文本两视图、待确认标记与基础历史列表；独立结构视图和增强时间线后续做。
@@ -722,7 +724,7 @@ flowchart LR
 
 路由表均相对 `/api`；成功 `error=null`，失败 `data=null`，错误结构固定为 `{code,message,detail}`。错误码、HTTP 映射、默认参数及事件交付语义见实现契约 §4。本节后续接口不构成 MVP 开工授权，不能注册空壳成功响应。
 
-**第 3 周实现状态**：下表标注 ✅ 的路由已有真实实现并返回统一外壳；其余为后续项（依赖 B 线的 M-05/M-08，或 TBD-08/TBD-09），本轮**不注册**。`workspace_busy` 的错误类型与 HTTP 映射已就绪，服务生命周期已持有数据根 OS 独占锁，另一服务启动报 workspace_busy；关闭或进程退出后释放（见实现契约 §6）。
+**当前实现状态**：下表标注 ✅ 的路由已有真实实现并返回统一外壳；其余依赖 B 线的 M-05/M-08，暂不注册。恢复 v1 见实现契约 §2.4。`workspace_busy` 的错误类型与 HTTP 映射已就绪，服务生命周期已持有数据根 OS 独占锁，另一服务启动报 workspace_busy；关闭或进程退出后释放（见实现契约 §6）。
 
 | 要干什么 | 接口 | 状态 |
 | --- | --- | --- |
@@ -742,8 +744,10 @@ flowchart LR
 | 对比（核心） | `GET /workspaces/{ws}/diff?base=&head=&layer=` | 待 B 线 M-05/M-08 |
 | 对比概览 | `GET /workspaces/{ws}/diff/summary?base=&head=` | 待 B 线 |
 | 区间对比 | `GET /workspaces/{ws}/range-diff?from=&to=` | 后续 |
-| 撤销 | `POST /workspaces/{ws}/ops/{op}/undo` | 待 TBD-08/TBD-09 |
-| 恢复状态 | `POST /workspaces/{ws}/ops/{op}/restore` | 待 TBD-08/TBD-09 |
+| 恢复预览 | `POST /workspaces/{ws}/restore/preview` | ✅ `{rev}`，契约 §2.4 |
+| 撤销恢复预览 | `POST /workspaces/{ws}/undo/preview` | ✅ 最近完成恢复 |
+| 恢复计划 | `GET /workspaces/{ws}/restore/plans/{plan}` | ✅ 读取清单 |
+| 确认恢复/续作 | `POST /workspaces/{ws}/restore/plans/{plan}/apply` | ✅ `{confirm:true}` |
 | 报告导出 | `GET /reports/{report_id}/export?format=md\|json` | 后续 |
 | 行为对比（预留） | `POST /workspaces/{ws}/behavior-diff` | 预留，零实现 |
 
@@ -761,13 +765,15 @@ skillforge-vm diff stable @~3      # 引用式对比
 skillforge-vm range-diff stable @  # 后续：区间对比
 skillforge-vm log                  # 时间线
 skillforge-vm tag tested           # 打锚点
-skillforge-vm undo                 # 撤销
+skillforge-vm restore tested       # 预览确认后恢复整个 Skill 到锚点
+skillforge-vm undo                 # 预览确认后撤销最近一次文件恢复
+skillforge-vm restore --resume PLAN # 中断后预览确认并续作
 skillforge-vm export --md          # 后续：导出报告
 ```
 
 > **CLI 只是服务的客户端**：它不直接读写数据库，所以 `skillforge-vm diff` 与网页上点按钮**完全等价**。
 
-**第 3 周实现状态**：`start / init / workspaces / status / snapshot / log / show / tag / ops` 已可用；`--url` 未给时按「环境变量 `SKILLFORGE_VM_URL` → 数据根 `runtime.json`（`start` 写入实际端口）→ 默认 `127.0.0.1:8756`」解析。`diff` 与 `undo` 作为命令存在，但会以非零退出并给出确切原因（分别待 B 线、待 TBD-08/TBD-09），不返回伪造成功。
+**第 3 周实现状态**：`start / init / workspaces / status / snapshot / log / show / tag / ops` 已可用；`--url` 未给时按「环境变量 `SKILLFORGE_VM_URL` → 数据根 `runtime.json`（`start` 写入实际端口）→ 默认 `127.0.0.1:8756`」解析。`diff` 仍明确失败（待 B 线）；2026-10-13 已接入恢复 v1 的 `restore/undo`，详见实现契约 §2.4。
 
 M-12 Week 4：全局 `--data-root` 贯穿所有命令的地址发现；端口从已绑定 socket 交给服务器，不释放后重绑。服务完成启动才原子发布 runtime.json，正常关闭在释放数据根锁前删除本实例记录；异常退出可能保留旧地址，连接失败给出明确诊断。非法/截断/非字典运行记录回退默认发现。
 

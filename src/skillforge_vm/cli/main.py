@@ -155,6 +155,9 @@ def status(ctx: typer.Context, ws: WsOpt = None) -> None:
     typer.echo(f"工作区：{data['workspace_id']}")
     typer.echo(f"当前修订：{data['head_revision']}（seq {data['head_seq']}）")
     typer.echo(f"状态：{pending}")
+    if plan_id := data.get("pending_restore"):
+        typer.echo(f"恢复尚未完成：{plan_id}")
+        typer.echo(f"继续恢复：restore --resume {plan_id} --ws {workspace_id}")
 
 
 @app.command()
@@ -256,13 +259,73 @@ def diff(ctx: typer.Context) -> None:
     _fail("diff 尚未实现：对比引擎与报告属于 B 线（M-05/M-08），本轮未接入。")
 
 
-@app.command()
-def undo(ctx: typer.Context) -> None:
-    """撤销（受 TBD-08/TBD-09 阻塞）。"""
-    _fail(
-        "undo 尚未实现：TBD-08（是否写回用户文件）与 TBD-09（状态持久化）未关闭，"
-        "承诺文件恢复前不得上线。"
+def _confirm_restore(client: VmClient, ws: str, plan: dict, *, yes: bool) -> None:
+    if plan["no_change"]:
+        typer.echo("目标内容与当前一致，无需恢复。")
+        return
+    typer.echo(f"恢复计划：{plan['plan_id']}")
+    typer.echo(f"当前 {plan['before_rev']} → 目标 {plan['target_rev']}")
+    labels = {
+        "add": "新增",
+        "modify": "修改",
+        "delete": "删除",
+        "mkdir": "建目录",
+        "rmdir": "删目录",
+    }
+    for change in plan["changes"]:
+        typer.echo(f"  {labels[change['action']]}  {change['path']}")
+    typer.echo("将回写整个 Skill 的纳管内容；请先保存并暂停编辑。历史快照保留。")
+    if not yes and not typer.confirm("确认执行？", default=False):
+        typer.echo("已取消，未回写 Skill 文件。")
+        return
+    data = client.post(
+        f"/api/workspaces/{ws}/restore/plans/{plan['plan_id']}/apply", {"confirm": True}
     )
+    if data["created"]:
+        typer.echo(f"恢复完成：{data['revision']['rev_id']}（seq {data['revision']['seq']}）")
+    else:
+        typer.echo(f"计划此前已完成，本次未回写文件：{data['revision']['rev_id']}")
+
+
+@app.command()
+def restore(
+    ctx: typer.Context,
+    rev: Annotated[str | None, typer.Argument(help="目标修订或锚点")] = None,
+    resume: Annotated[str | None, typer.Option(help="继续指定恢复计划")] = None,
+    ws: WsOpt = None,
+    yes: Annotated[bool, typer.Option("--yes", help="显式确认回写，适用于自动化")] = False,
+) -> None:
+    """预览并确认恢复整个 Skill；中断后用 --resume 继续。"""
+    if (rev is None) == (resume is None):
+        _fail("请提供目标修订，或使用 --resume <计划 ID>，二者只能选一个。")
+    client = _client(ctx)
+    try:
+        workspace_id = _resolve_ws(client, ws)
+        base = f"/api/workspaces/{workspace_id}/restore"
+        plan = (
+            client.get(f"{base}/plans/{resume}")
+            if resume is not None
+            else client.post(f"{base}/preview", {"rev": rev})
+        )
+        _confirm_restore(client, workspace_id, plan, yes=yes)
+    except CliError as exc:
+        _fail(str(exc))
+
+
+@app.command()
+def undo(
+    ctx: typer.Context,
+    ws: WsOpt = None,
+    yes: Annotated[bool, typer.Option("--yes", help="显式确认撤销最近一次恢复")] = False,
+) -> None:
+    """预览并确认撤销最近一次文件恢复；已有后续改动时拒绝覆盖。"""
+    client = _client(ctx)
+    try:
+        workspace_id = _resolve_ws(client, ws)
+        plan = client.post(f"/api/workspaces/{workspace_id}/undo/preview", {})
+        _confirm_restore(client, workspace_id, plan, yes=yes)
+    except CliError as exc:
+        _fail(str(exc))
 
 
 if __name__ == "__main__":  # pragma: no cover

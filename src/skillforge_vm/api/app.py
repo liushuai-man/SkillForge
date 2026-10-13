@@ -1,8 +1,8 @@
 """M-10 接口层：FastAPI 应用工厂与路由表（设计 §4.6 / 契约 §4）。
 
 只注册**已有真实实现**的路由。diff / range-diff / reports / behavior-diff 依赖 M-05/M-08（B 线）
-或预留契约，尚未实现，故不注册，避免出现「占位成功响应」。undo / restore 受 TBD-08/TBD-09
-阻塞（见契约 §2.3），同样不注册。
+或预留契约，尚未实现，故不注册，避免出现「占位成功响应」。undo / restore 按契约 §2.4
+先预览、显式确认，恢复计划支持中断续作。
 """
 
 from __future__ import annotations
@@ -20,7 +20,13 @@ from starlette.staticfiles import StaticFiles
 
 from ..workspace.manager import WorkspaceManager
 from .envelope import RequestIdMiddleware, envelope_ok, register_error_handlers
-from .schemas import InitRequest, RefRequest, SnapshotRequest
+from .schemas import (
+    InitRequest,
+    RefRequest,
+    RestoreApplyRequest,
+    RestorePreviewRequest,
+    SnapshotRequest,
+)
 from .service import WorkspaceService
 
 
@@ -85,6 +91,22 @@ def create_app(
         return envelope_ok(service.snapshot(ws_id, payload.message))
 
     # ---- 修订 / 变更 ----
+
+    @router.post("/workspaces/{ws_id}/restore/preview")
+    def preview_restore(ws_id: str, payload: RestorePreviewRequest) -> dict[str, Any]:
+        return envelope_ok(service.preview_restore(ws_id, payload.rev))
+
+    @router.post("/workspaces/{ws_id}/undo/preview")
+    def preview_undo(ws_id: str) -> dict[str, Any]:
+        return envelope_ok(service.preview_undo(ws_id))
+
+    @router.get("/workspaces/{ws_id}/restore/plans/{plan_id}")
+    def get_restore_plan(ws_id: str, plan_id: str) -> dict[str, Any]:
+        return envelope_ok(service.get_restore_plan(ws_id, plan_id))
+
+    @router.post("/workspaces/{ws_id}/restore/plans/{plan_id}/apply")
+    def apply_restore(ws_id: str, plan_id: str, payload: RestoreApplyRequest) -> dict[str, Any]:
+        return envelope_ok(service.apply_restore(ws_id, plan_id, confirm=payload.confirm))
 
     @router.get("/workspaces/{ws_id}/revisions")
     def list_revisions(

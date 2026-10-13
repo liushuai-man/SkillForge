@@ -6,18 +6,27 @@
 
 from __future__ import annotations
 
+import json
 import threading
 from datetime import UTC, datetime
 from functools import wraps
 from pathlib import Path
 from typing import Any
 
-from ..core.errors import InvalidRequestError, RefNotFoundError, RevisionNotFoundError
+from ..core.errors import (
+    InvalidRequestError,
+    RefNotFoundError,
+    RestoreConflictError,
+    RestorePendingError,
+    RevisionNotFoundError,
+)
 from ..core.locking import DataRootLock, SerialGate
 from ..core.types import ObjectType, SnapshotSource, SnapshotTrigger
 from ..db.connection import connect, transaction
 from ..objectstore.objects import object_id
 from ..oplog.models import OpKind
+from ..oplog.restore import RestoreExecutor
+from ..oplog.restore_models import RestorePlan
 from ..oplog.store import OpStore
 from ..revision.models import Ref
 from ..revision.revset import resolve_revset
@@ -154,6 +163,7 @@ class WorkspaceService:
         conn = connect(handle.paths.db_file)
         try:
             head = RevisionStore(conn).head(ws_id)
+            pending_restore = OpStore(conn).pending_restore(ws_id)
         finally:
             conn.close()
         pending = self._has_pending(handle, head)
@@ -164,6 +174,7 @@ class WorkspaceService:
             "head_seq": None if head is None else head.seq,
             "change_id": None if head is None else head.change_id,
             "has_pending_changes": pending,
+            "pending_restore": pending_restore,
         }
 
     def _has_pending(self, handle: WorkspaceHandle, head: Any) -> bool:
@@ -223,6 +234,72 @@ class WorkspaceService:
 
     # ---- 修订 / 变更 ----
 
+    def _restore_executor(self, ws_id: str) -> RestoreExecutor:
+        handle = self._handle(ws_id)
+        return RestoreExecutor(handle, self._engine(handle))
+
+    @staticmethod
+    def _plan_data(plan: RestorePlan | None) -> dict[str, Any]:
+        if plan is None:
+            return {"no_change": True, "plan_id": None, "changes": []}
+        return {
+            "no_change": False,
+            "plan_id": plan.plan_id,
+            "before_rev": plan.before_rev,
+            "target_rev": plan.target_rev,
+            "action": plan.action,
+            "changes": plan.changes(),
+        }
+
+    @_serialized
+    def preview_restore(self, ws_id: str, rev: str) -> dict[str, Any]:
+        before = self.snapshot(ws_id)["revision"]["rev_id"]
+        target = self.get_revision(ws_id, rev)["rev_id"]
+        return self._plan_data(self._restore_executor(ws_id).preview(before, target))
+
+    @_serialized
+    def preview_undo(self, ws_id: str) -> dict[str, Any]:
+        before = self.snapshot(ws_id)["revision"]["rev_id"]
+        handle = self._handle(ws_id)
+        conn = connect(handle.paths.db_file)
+        try:
+            done = OpStore(conn).latest_restore(ws_id, completed=True)
+        finally:
+            conn.close()
+        if done is None:
+            raise RestoreConflictError("没有可撤销的文件恢复")
+        payload = json.loads(done.payload_json)
+        if before != payload["after_rev"]:
+            raise RestoreConflictError("恢复后已有新改动，请显式选择历史修订进行 restore")
+        return self._plan_data(
+            self._restore_executor(ws_id).preview(
+                before, payload["before_rev"], action="undo_restore"
+            )
+        )
+
+    def get_restore_plan(self, ws_id: str, plan_id: str) -> dict[str, Any]:
+        return self._plan_data(self._restore_executor(ws_id).load(plan_id))
+
+    @_serialized
+    def apply_restore(self, ws_id: str, plan_id: str, *, confirm: bool) -> dict[str, Any]:
+        if confirm is not True:
+            raise InvalidRequestError("文件恢复必须显式确认 confirm=true")
+        result = self._restore_executor(ws_id).apply(plan_id)
+        if result.created:
+            self._publish(
+                {
+                    "type": EVENT_SNAPSHOT_CREATED,
+                    "workspace_id": ws_id,
+                    "revision_id": result.revision.rev_id,
+                    "seq": result.revision.seq,
+                }
+            )
+        return {
+            "plan_id": plan_id,
+            "created": result.created,
+            "revision": result.revision.model_dump(),
+        }
+
     def list_revisions(
         self, ws_id: str, *, limit: int | None = None, max_seq: int | None = None
     ) -> list[dict[str, Any]]:
@@ -271,6 +348,8 @@ class WorkspaceService:
             store = RevisionStore(conn)
             head = store.head(ws_id)
             current = None if head is None else head.rev_id
+            if pending := OpStore(conn).pending_restore(ws_id):
+                raise RestorePendingError("请先继续未完成的恢复", detail=pending)
             if rev_spec is None:
                 if head is None:
                     raise RevisionNotFoundError("工作区还没有任何修订，无法打锚点", detail=ws_id)
