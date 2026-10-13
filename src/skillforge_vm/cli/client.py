@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -37,11 +38,27 @@ def write_runtime(base_url: str, *, data_root: Path | None = None) -> Path:
     """记录本次 `start` 实际选择的端口，供后续 CLI 复用同一服务。"""
     path = runtime_file(data_root)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps({"base_url": base_url, "pid": os.getpid()}, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=path.parent, prefix=".runtime-", delete=False
+    ) as stream:
+        tmp = Path(stream.name)
+        json.dump({"base_url": base_url, "pid": os.getpid()}, stream, ensure_ascii=False)
+    try:
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
     return path
+
+
+def remove_runtime(base_url: str, *, data_root: Path) -> None:
+    """仅清理本实例发布的地址；在服务仍持有数据根锁时调用。"""
+    path = runtime_file(data_root)
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if payload == {"base_url": base_url, "pid": os.getpid()}:
+            path.unlink()
+    except (OSError, ValueError):
+        pass
 
 
 def read_runtime_base_url(*, data_root: Path | None = None) -> str | None:
@@ -52,8 +69,18 @@ def read_runtime_base_url(*, data_root: Path | None = None) -> str | None:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
+    if not isinstance(payload, dict):
+        return None
     base_url = payload.get("base_url")
-    return base_url if isinstance(base_url, str) and base_url else None
+    if not isinstance(base_url, str):
+        return None
+    try:
+        parsed = urlparse(base_url)
+        if parsed.scheme in ("http", "https") and parsed.hostname and parsed.port:
+            return base_url
+    except ValueError:
+        pass
+    return None
 
 
 def resolve_base_url(explicit: str | None, *, data_root: Path | None = None) -> str:

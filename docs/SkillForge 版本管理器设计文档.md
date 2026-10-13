@@ -761,6 +761,8 @@ skillforge-vm export --md          # 后续：导出报告
 
 **第 3 周实现状态**：`start / init / workspaces / status / snapshot / log / show / tag / ops` 已可用；`--url` 未给时按「环境变量 `SKILLFORGE_VM_URL` → 数据根 `runtime.json`（`start` 写入实际端口）→ 默认 `127.0.0.1:8756`」解析。`diff` 与 `undo` 作为命令存在，但会以非零退出并给出确切原因（分别待 B 线、待 TBD-08/TBD-09），不返回伪造成功。
 
+M-12 Week 4：全局 `--data-root` 贯穿所有命令的地址发现；端口从已绑定 socket 交给服务器，不释放后重绑。服务完成启动才原子发布 runtime.json，正常关闭在释放数据根锁前删除本实例记录；异常退出可能保留旧地址，连接失败给出明确诊断。非法/截断/非字典运行记录回退默认发现。
+
 ## 4.7 运行与部署形态
 
 | 形态 | 说明 |
