@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core.errors import RefNotFoundError, RevisionNotFoundError
+from ..core.locking import DataRootLock
 from ..core.types import ObjectType, SnapshotSource, SnapshotTrigger
 from ..db.connection import connect, transaction
 from ..objectstore.objects import object_id
@@ -67,9 +68,13 @@ class WorkspaceService:
         self._writes = threading.RLock()
         self._watchers: dict[str, tuple[threading.Thread, threading.Event]] = {}
         self._running = False
+        self._root_lock = DataRootLock(self._manager.data_root)
 
     def start(self) -> None:
         with self._writes:
+            if self._running:
+                return
+            self._root_lock.acquire()
             self._running = True
             for handle in self._manager.list():
                 self._start_watcher(handle)
@@ -83,6 +88,7 @@ class WorkspaceService:
                 stop.set()
         for thread, _ in watchers:
             thread.join()
+        self._root_lock.release()
 
     def _start_watcher(self, handle: WorkspaceHandle) -> None:
         ws_id = handle.workspace_id
