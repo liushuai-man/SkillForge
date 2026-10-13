@@ -62,9 +62,7 @@ async def test_init_and_list_workspaces(client: httpx.AsyncClient, skill_dir: Pa
     assert single["data"]["root_path"] == str(skill_dir.resolve())
 
 
-async def test_status_and_snapshot_roundtrip(
-    client: httpx.AsyncClient, skill_dir: Path
-) -> None:
+async def test_status_and_snapshot_roundtrip(client: httpx.AsyncClient, skill_dir: Path) -> None:
     workspace_id = (await _init(client, skill_dir))["data"]["workspace"]["workspace_id"]
 
     first = (await client.get(f"/api/workspaces/{workspace_id}/status")).json()["data"]
@@ -118,16 +116,12 @@ async def test_tag_and_reserved_ref(client: httpx.AsyncClient, skill_dir: Path) 
     names = {row["name"] for row in refs}
     assert {"tested", "last"} <= names
 
-    reserved = await client.post(
-        f"/api/workspaces/{workspace_id}/refs", json={"name": "last"}
-    )
+    reserved = await client.post(f"/api/workspaces/{workspace_id}/refs", json={"name": "last"})
     assert reserved.status_code == 422
     assert reserved.json()["error"]["code"] == "invalid_request"
 
 
-async def test_ops_record_init_snapshot_and_ref(
-    client: httpx.AsyncClient, skill_dir: Path
-) -> None:
+async def test_ops_record_init_snapshot_and_ref(client: httpx.AsyncClient, skill_dir: Path) -> None:
     workspace_id = (await _init(client, skill_dir))["data"]["workspace"]["workspace_id"]
     (skill_dir / "SKILL.md").write_text("# Demo 2\n", encoding="utf-8")
     await client.post(f"/api/workspaces/{workspace_id}/snapshots", json={})
@@ -178,3 +172,37 @@ async def test_snapshot_publishes_created_event(tmp_path: Path) -> None:
     assert event["type"] == EVENT_SNAPSHOT_CREATED
     assert event["workspace_id"] == workspace_id
     assert event["revision_id"]
+
+
+async def test_service_lifecycle_watches_new_and_existing_workspaces(
+    tmp_path: Path, skill_dir: Path
+) -> None:
+    manager = WorkspaceManager(data_root=tmp_path / "data")
+    service = WorkspaceService(manager)
+    app = create_app(service=service)
+    async with app.router.lifespan_context(app):
+        ws = service.init(str(skill_dir))["workspace"]["workspace_id"]
+        await asyncio.sleep(0.7)  # 启动扫描及原生监听就绪后再验证真实事件合并
+        queue = service.bus.subscribe()
+        for index in range(5):
+            (skill_dir / "SKILL.md").write_text(f"# burst {index}", encoding="utf-8")
+            await asyncio.sleep(0.1)
+        event = await asyncio.wait_for(queue.get(), timeout=5)
+        assert event["seq"] == 2
+        await asyncio.sleep(0.7)
+        assert service.status(ws)["head_seq"] == 2
+        assert not service.status(ws)["has_pending_changes"]
+        assert queue.empty()
+        service.bus.unsubscribe(queue)
+
+    (skill_dir / "SKILL.md").write_text("# offline edit", encoding="utf-8")
+    restarted = WorkspaceService(manager)
+    app = create_app(service=restarted)
+    async with app.router.lifespan_context(app):
+        for _ in range(100):
+            if restarted.status(ws)["head_seq"] == 3:
+                break
+            await asyncio.sleep(0.05)
+        assert restarted.status(ws)["head_seq"] == 3
+        assert not restarted.status(ws)["has_pending_changes"]
+    assert not restarted._watchers

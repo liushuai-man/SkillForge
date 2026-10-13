@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import threading
 from datetime import UTC, datetime
+from functools import wraps
 from pathlib import Path
 from typing import Any
 
@@ -22,12 +23,22 @@ from ..revision.revset import resolve_revset
 from ..revision.store import RevisionStore
 from ..watcher.engine import SnapshotEngine
 from ..watcher.scanner import scan_files
+from ..watcher.watcher import WorkspaceWatcher
 from ..workspace.manager import WorkspaceHandle, WorkspaceManager
 from .events import EVENT_SNAPSHOT_CREATED, EventBus
 
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _serialized(method):
+    @wraps(method)
+    def call(self, *args, **kwargs):
+        with self._writes:
+            return method(self, *args, **kwargs)
+
+    return call
 
 
 def _workspace_info(handle: WorkspaceHandle) -> dict[str, Any]:
@@ -53,6 +64,34 @@ class WorkspaceService:
         self._bus = bus or EventBus()
         self._engines: dict[str, SnapshotEngine] = {}
         self._guard = threading.Lock()
+        self._writes = threading.RLock()
+        self._watchers: dict[str, tuple[threading.Thread, threading.Event]] = {}
+        self._running = False
+
+    def start(self) -> None:
+        with self._writes:
+            self._running = True
+            for handle in self._manager.list():
+                self._start_watcher(handle)
+
+    def stop(self) -> None:
+        with self._writes:
+            self._running = False
+            watchers = list(self._watchers.values())
+            self._watchers.clear()
+            for _, stop in watchers:
+                stop.set()
+        for thread, _ in watchers:
+            thread.join()
+
+    def _start_watcher(self, handle: WorkspaceHandle) -> None:
+        ws_id = handle.workspace_id
+        if self._running and ws_id not in self._watchers:
+            watcher = WorkspaceWatcher(
+                self._engine(handle),
+                capture=lambda: self.snapshot(ws_id, trigger=SnapshotTrigger.WATCH),
+            )
+            self._watchers[ws_id] = watcher.start_background()
 
     @property
     def manager(self) -> WorkspaceManager:
@@ -75,8 +114,10 @@ class WorkspaceService:
 
     # ---- 工作区 ----
 
+    @_serialized
     def init(self, path: str, name: str | None = None) -> dict[str, Any]:
         result = self._manager.init(path, name)
+        self._start_watcher(result.workspace)
         self._publish(
             {
                 "type": EVENT_SNAPSHOT_CREATED,
@@ -152,10 +193,17 @@ class WorkspaceService:
 
     # ---- 快照 ----
 
-    def snapshot(self, ws_id: str, message: str | None = None) -> dict[str, Any]:
+    @_serialized
+    def snapshot(
+        self,
+        ws_id: str,
+        message: str | None = None,
+        *,
+        trigger: SnapshotTrigger = SnapshotTrigger.MANUAL,
+    ) -> dict[str, Any]:
         handle = self._handle(ws_id)
         result = self._engine(handle).capture(
-            trigger=SnapshotTrigger.MANUAL, source=SnapshotSource.EDIT, message=message
+            trigger=trigger, source=SnapshotSource.EDIT, message=message
         )
         if result.created:
             self._publish(
@@ -206,6 +254,7 @@ class WorkspaceService:
 
     # ---- 引用 / 锚点 ----
 
+    @_serialized
     def set_ref(self, ws_id: str, name: str, rev_spec: str | None = None) -> dict[str, Any]:
         handle = self._handle(ws_id)
         conn = connect(handle.paths.db_file)

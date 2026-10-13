@@ -7,8 +7,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import APIRouter, FastAPI, Query, Request
@@ -32,11 +34,20 @@ def create_app(
     """构造接口层应用；可注入自建 manager / service 以便测试与嵌入。"""
     service = service or WorkspaceService(manager)
 
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        try:
+            await asyncio.to_thread(service.start)
+            yield
+        finally:
+            await asyncio.to_thread(service.stop)
+
     app = FastAPI(
         title="SkillForge VM",
         version=_default_version(),
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
+        lifespan=lifespan,
     )
     app.add_middleware(RequestIdMiddleware)
     register_error_handlers(app)
@@ -124,6 +135,8 @@ def create_app(
                 }
                 while True:
                     event = await queue.get()
+                    if event.get("workspace_id") != ws_id:
+                        continue
                     yield {"event": "message", "data": json.dumps(event, ensure_ascii=False)}
             finally:
                 service.bus.unsubscribe(queue)

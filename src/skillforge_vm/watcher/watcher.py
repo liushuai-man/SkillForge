@@ -9,11 +9,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+from collections.abc import Callable
 
 from watchfiles import awatch
 
-from ..core.errors import SnapshotUnstableError
-from ..core.types import DEBOUNCE_MS, SnapshotSource, SnapshotTrigger
+from ..core.errors import SkillForgeVMError
+from ..core.types import DEBOUNCE_MS
 from .engine import SnapshotEngine
 
 logger = logging.getLogger(__name__)
@@ -28,10 +29,12 @@ class WorkspaceWatcher:
         *,
         debounce_ms: int = DEBOUNCE_MS,
         step_ms: int = 50,
+        capture: Callable[[], object] | None = None,
     ) -> None:
         self._engine = engine
         self._debounce_ms = debounce_ms
         self._step_ms = step_ms
+        self._capture = capture or engine.capture
 
     async def run(self, stop_event: threading.Event | None = None) -> None:
         """持续监听直到 ``stop_event`` 置位。"""
@@ -41,17 +44,20 @@ class WorkspaceWatcher:
         self._capture_safely(root)
         async for _changes in awatch(
             root,
-            debounce=self._debounce_ms,
-            step=self._step_ms,
+            debounce=max(2000, self._debounce_ms),
+            step=self._debounce_ms,
+            rust_timeout=2000,
+            yield_on_timeout=True,
+            watch_filter=None,
             stop_event=stop_event,
         ):
             self._capture_safely(root)
 
     def _capture_safely(self, root: str) -> None:
         try:
-            self._engine.capture(trigger=SnapshotTrigger.WATCH, source=SnapshotSource.EDIT)
-        except SnapshotUnstableError:
-            logger.warning("工作区持续变化，本轮快照跳过：%s", root)
+            self._capture()
+        except (SkillForgeVMError, OSError) as exc:
+            logger.error("快照失败，保留已提交状态并在下一轮重试：%s：%s", root, exc)
 
     def start_background(self) -> tuple[threading.Thread, threading.Event]:
         """在独立线程中运行监听，返回线程与停止事件（供服务在后台调用）。"""
