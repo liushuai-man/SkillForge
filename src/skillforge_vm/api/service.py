@@ -24,10 +24,12 @@ from ..core.locking import DataRootLock, SerialGate
 from ..core.types import ObjectType, SnapshotSource, SnapshotTrigger
 from ..db.connection import connect, transaction
 from ..objectstore.objects import object_id
+from ..objectstore.store import ObjectStore
 from ..oplog.models import OpKind
 from ..oplog.restore import RestoreExecutor
 from ..oplog.restore_models import RestorePlan
 from ..oplog.store import OpStore
+from ..revision.content import preview_blob, read_tree
 from ..revision.models import Ref
 from ..revision.revset import resolve_revset
 from ..revision.store import RESERVED_REF_NAMES, RevisionStore
@@ -333,6 +335,24 @@ class WorkspaceService:
         finally:
             conn.close()
         return [change.model_dump() for change in changes]
+
+    def revision_files(self, ws_id: str, spec: str) -> dict[str, Any]:
+        handle = self._handle(ws_id)
+        revision = self.get_revision(ws_id, spec)
+        store = ObjectStore(handle.paths.objects_dir)
+        files, _ = read_tree(store, revision["root_tree_oid"])
+        return {"revision": revision, "files": [
+            {"path": path, "oid": oid} for path, (oid, _) in sorted(files.items())
+        ]}
+
+    def revision_file(self, ws_id: str, spec: str, path: str) -> dict[str, Any]:
+        listing = self.revision_files(ws_id, spec)
+        entry = next((item for item in listing["files"] if item["path"] == path), None)
+        if entry is None:
+            raise InvalidRequestError("该快照中不存在此文件", detail=path)
+        handle = self._handle(ws_id)
+        return {"rev_id": listing["revision"]["rev_id"], "path": path,
+                **preview_blob(ObjectStore(handle.paths.objects_dir), entry["oid"])}
 
     # ---- 引用 / 锚点 ----
 

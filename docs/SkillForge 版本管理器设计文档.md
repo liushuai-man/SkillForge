@@ -1,5 +1,18 @@
 # SkillForge 版本管理器（Version Manager）设计文档
 
+## 2026-10-15 快照阅读增量（M-11 / §4.6）
+
+新增只读 API：GET /api/workspaces/{ws_id}/revisions/{rev}/files 返回修订及文件 path/oid；
+GET /api/workspaces/{ws_id}/revisions/{rev}/file?path= 返回 rev_id、path、size、content、reason。
+通过修订公开接口读取不可变对象，不读取实时工作文件，不修改存储格式。
+UTF-8 文本按原文展示；非 UTF-8、含 NUL 或超过 2 MiB 的文件提示不可预览。
+路径必须属于所选修订；未知工作区/修订或对象损坏按既有错误协议返回。
+
+M-11 增加工作区、倒序版本列表、文件搜索、只读正文及 CodeMirror MergeView
+两版本文本对比。新增/删除/修改按对象 ID 判断，不生成语义摘要。
+刷新不切换正在阅读的历史版本；删除文件可在对比视图读取旧正文。
+ZIP 自动同步、媒体证据关联及网页恢复按钮不在此次实现范围。
+
 > **文档性质**：一份合并文档，同时承载三层内容——**产品定义 / 需求分析 / 技术实现**。
 > **抽离说明**：本文描述的是从 SkillForge 主平台中**把「版本管理器」抽离出来**的版本。抽离后它只做一件事——**管理 Skill 的版本，并把版本对比做透**。
 > **核心目标**：为 **Skill 的高频修改减负**。参考对象：Git 的对象模型、Jujutsu 的工作区自动快照、Difftastic 的结构化 diff，以及 GitHub 上各类 prompt / 数据版本管理方案。

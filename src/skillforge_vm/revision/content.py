@@ -8,6 +8,25 @@ from ..objectstore.objects import decode_tree
 from ..objectstore.store import ObjectStore
 
 
+def preview_blob(store: ObjectStore, oid: str) -> dict:
+    """Read immutable bytes; never replace invalid text or interpret it as HTML."""
+    kind, data = store.read(oid)
+    if kind != ObjectType.BLOB:
+        raise ObjectCorruptedError("文件对象类型错误", detail=oid)
+    result = {"size": len(data), "content": None, "reason": None}
+    if len(data) > 2 * 1024 * 1024:
+        result["reason"] = "文件超过 2 MiB，暂不预览"
+        return result
+    try:
+        text = data.decode("utf-8-sig")
+        if "\x00" in text:
+            raise UnicodeError()
+        result["content"] = text
+    except UnicodeError:
+        result["reason"] = "二进制或非 UTF-8 文件，暂不预览"
+    return result
+
+
 def safe_relative(path: str) -> None:
     parts = path.split("/")
     if (

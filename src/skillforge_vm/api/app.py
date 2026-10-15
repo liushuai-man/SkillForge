@@ -126,6 +126,14 @@ def create_app(
 
     # ---- 引用 / 锚点 ----
 
+    @router.get("/workspaces/{ws_id}/revisions/{rev}/files")
+    def revision_files(ws_id: str, rev: str) -> dict[str, Any]:
+        return envelope_ok(service.revision_files(ws_id, rev))
+
+    @router.get("/workspaces/{ws_id}/revisions/{rev}/file")
+    def revision_file(ws_id: str, rev: str, path: str = Query()) -> dict[str, Any]:
+        return envelope_ok(service.revision_file(ws_id, rev, path))
+
     @router.post("/workspaces/{ws_id}/refs")
     def set_ref(ws_id: str, payload: RefRequest) -> dict[str, Any]:
         return envelope_ok(service.set_ref(ws_id, payload.name, payload.rev))
