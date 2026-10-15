@@ -1,7 +1,7 @@
 """M-10 接口层：FastAPI 应用工厂与路由表（设计 §4.6 / 契约 §4）。
 
-只注册**已有真实实现**的路由。diff / range-diff / reports / behavior-diff 依赖 M-05/M-08（B 线）
-或预留契约，尚未实现，故不注册，避免出现「占位成功响应」。undo / restore 按契约 §2.4
+只注册**已有真实实现**的路由。range-diff / reports export / behavior-diff 为后续能力，
+不注册占位成功响应。undo / restore 按契约 §2.4
 先预览、显式确认，恢复计划支持中断续作。
 """
 
@@ -123,6 +123,25 @@ def create_app(
     @router.get("/workspaces/{ws_id}/changes")
     def list_changes(ws_id: str) -> dict[str, Any]:
         return envelope_ok(service.list_changes(ws_id))
+
+    # ---- 对比 ----
+
+    @router.get("/workspaces/{ws_id}/diff")
+    def diff(
+        ws_id: str,
+        base: str | None = Query(default=None),
+        head: str | None = Query(default=None),
+        layer: str = Query(default="L3"),
+    ) -> dict[str, Any]:
+        return envelope_ok(service.diff(ws_id, base=base, head=head, layer=layer))
+
+    @router.get("/workspaces/{ws_id}/diff/summary")
+    def diff_summary(
+        ws_id: str,
+        base: str | None = Query(default=None),
+        head: str | None = Query(default=None),
+    ) -> dict[str, Any]:
+        return envelope_ok(service.diff_summary(ws_id, base=base, head=head))
 
     # ---- 引用 / 锚点 ----
 

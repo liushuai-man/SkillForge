@@ -480,6 +480,8 @@ flowchart TB
 - 结果缓存：键 = `(base_rev, head_rev, layer, algo_version)`；有效 `algo_version` 含规则、解析器和分析配置指纹（§7.7）。
 - 单文件语法失败仅降低该文件的计算层级；对象损坏中止本次报告，不能返回“无变化”。
 
+- 2026-10-15 MVP 实现：已接入 L0 文件增删改移、L1 行级原文证据、L2 Markdown/YAML/JSON 结构校验与节点证据、L3 规则语义对比；非 UTF-8、文本超限、不支持类型和解析失败按文件降级。输入仅来自 RevisionStore 路径索引与 ObjectStore 校验读取，不读工作区磁盘。
+
 ### M-06 语义抽取器
 
 内置单元类型（可扩展）：
@@ -502,12 +504,16 @@ flowchart TB
 - 不能可靠归类的文本保留在 L1/L2；无法确认的匹配写入 `needs_review`，不得凭关键词给出肯定的删除/移动结论。
 - 示例、代码块、引用中的指令与正文约束区分；工作流和数组顺序变化是有效变更。规则正确性用固定样例验收，不以展示出的条目数代替准确性。
 
+- 2026-10-15 MVP 实现：八类规则抽取及稳定 SourceSpan/ID 已落地；首批冻结样例覆盖八类、示例边界、BOM/CRLF/中文/emoji 与 Markdown 硬换行。后续真实脱敏样例只能追加，不能改旧预期迎合实现。
+
 ### M-07 聚类与降噪
 
 - **噪声判定规则**（可解释、可关）：仅折叠有证据的无语义影响变化；流程顺序、数组顺序、代码缩进、Markdown 硬换行和文本否定不得粗暴归入噪声。
 - **聚类**：按"文件邻近 + 语义单元类型 + 关键词命中"把多处改动聚成一条，生成人话标签（规则模板优先，模型可选）。
 - 每个语义单元至多进入一个主聚类；安全、兼容性等其他影响作为风险标签，不复制单元或重复计数。
 - **不确定性标注**：无法判定"删除 vs 移动"时标 `needs_review`。
+
+- 2026-10-15 MVP 实现：聚类按顶层路径与主语义类型确定性生成，每个单元只入一个 cluster；跨路径相似但非完全一致的候选保留 add/delete 并标 `ambiguous_move`。
 
 ### M-08 报告与结论
 
@@ -530,6 +536,8 @@ MVP 不做独立结构视图或专门待确认面板：待确认项直接标在�
 - MVP 返回规范报告 JSON，包含有效 `algo_version` 与稳定报告 ID；独立 Markdown/JSON 文件导出后续做。
 - 每条结论必须能追溯到单元与两侧原文；未计算、已降级与无变化是不同状态，不允许空数组代替这三种含义。
 
+- 2026-10-15 MVP 实现：规范报告、风险规则、缓存键、稳定 report_id 与 SQLite 报告落库已接通；同步 API/CLI 共用同一正文，命中缓存不重复生成报告。
+
 ### M-09 操作日志与撤销
 
 - 操作 DAG：每个操作记录父操作与前后状态引用。
@@ -551,9 +559,13 @@ MVP 不做独立结构视图或专门待确认面板：待确认项直接标在�
 - 接口层：统一返回外壳、具体错误码、事件流（快照就绪 / 对比完成 / 降级发生）。
 - 界面：MVP 提供结论、语义/文本两视图、待确认标记与基础历史列表；独立结构视图和增强时间线后续做。
 - 命令行：与服务完全等价；`diff` 默认 `Working vs Baseline`。
-- 第 3 周实现：M-10 落地工作区/状态/快照/修订/变更/引用/操作日志路由与 SSE（统一外壳 `{ok,data,error,request_id}`，错误码映射见契约 §4.2）；M-12 提供 `start / init / workspaces / status / snapshot / log / show / tag / ops`，仅作服务客户端。依赖 M-05/M-08 的 `diff`、`range-diff`、报告导出与预留的 `behavior-diff`，以及受 TBD-08/TBD-09 阻塞的 `undo/restore` 均**未注册**，避免出现占位成功响应（设计 §4.6）。
+- 第 3 周实现：M-10 已提供统一外壳的工作区/快照/修订/引用/恢复/事件及同步 `diff`/`diff/summary`；M-12 已提供 `start / init / workspaces / status / snapshot / diff / log / show / tag / ops / restore / undo`，业务命令只调用服务。`range-diff`、独立报告导出与 `behavior-diff` 仍不注册，避免占位成功响应。
+
+- 2026-10-15 M-11 MVP：报告页已接真实接口，具备旧结果更新标记、结论/风险/待确认、语义分组、CodeMirror MergeView 原文、基础历史两点比较、锚点及受控恢复/撤销；搜索筛选、独立结构页和增强时间线未实现。
 
 ### M-13 行为对比适配器（预留）
+
+- 2026-10-15 仅落地 `BehaviorAdapter` / `BehaviorResult` 类型契约；规范报告中 `behavior=null`，没有执行器或成功占位接口，符合 MVP 零实现边界。
 
 ```python
 class BehaviorDiffAdapter(Protocol):
@@ -732,7 +744,7 @@ flowchart LR
 
 路由表均相对 `/api`；成功 `error=null`，失败 `data=null`，错误结构固定为 `{code,message,detail}`。错误码、HTTP 映射、默认参数及事件交付语义见实现契约 §4。本节后续接口不构成 MVP 开工授权，不能注册空壳成功响应。
 
-**当前实现状态**：下表标注 ✅ 的路由已有真实实现并返回统一外壳；其余依赖 B 线的 M-05/M-08，暂不注册。恢复 v1 见实现契约 §2.4。`workspace_busy` 的错误类型与 HTTP 映射已就绪，服务生命周期已持有数据根 OS 独占锁，另一服务启动报 workspace_busy；关闭或进程退出后释放（见实现契约 §6）。
+**当前实现状态**：下表标注 ✅ 的路由已有真实实现并返回统一外壳；后续能力不注册占位。恢复 v1 见实现契约 §2.4。`workspace_busy` 的错误类型与 HTTP 映射已就绪，服务生命周期已持有数据根 OS 独占锁，另一服务启动报 workspace_busy；关闭或进程退出后释放（见实现契约 §6）。
 
 | 要干什么 | 接口 | 状态 |
 | --- | --- | --- |
@@ -749,8 +761,8 @@ flowchart LR
 | 锚点列表 | `GET /workspaces/{ws}/refs` | ✅ |
 | 操作日志 | `GET /workspaces/{ws}/ops` | ✅ |
 | 事件流 | `GET /workspaces/{ws}/events` | ✅（SSE） |
-| 对比（核心） | `GET /workspaces/{ws}/diff?base=&head=&layer=` | 待 B 线 M-05/M-08 |
-| 对比概览 | `GET /workspaces/{ws}/diff/summary?base=&head=` | 待 B 线 |
+| 对比（核心） | `GET /workspaces/{ws}/diff?base=&head=&layer=` | ✅ 同步计算/缓存/落库 |
+| 对比概览 | `GET /workspaces/{ws}/diff/summary?base=&head=` | ✅ |
 | 区间对比 | `GET /workspaces/{ws}/range-diff?from=&to=` | 后续 |
 | 恢复预览 | `POST /workspaces/{ws}/restore/preview` | ✅ `{rev}`，契约 §2.4 |
 | 撤销恢复预览 | `POST /workspaces/{ws}/undo/preview` | ✅ 最近完成恢复 |
@@ -783,11 +795,11 @@ skillforge-vm export --md          # 后续：导出报告
 
 > **CLI 只是服务的客户端**：它不直接读写数据库，所以 `skillforge-vm diff` 与网页上点按钮**完全等价**。
 
-**第 3 周实现状态**：`start / init / workspaces / status / snapshot / log / show / tag / ops` 已可用；`--url` 未给时按「环境变量 `SKILLFORGE_VM_URL` → 数据根 `runtime.json`（`start` 写入实际端口）→ 默认 `127.0.0.1:8756`」解析。`diff` 仍明确失败（待 B 线）；2026-10-13 已接入恢复 v1 的 `restore/undo`，详见实现契约 §2.4。
+**第 3 周实现状态**：`start / init / workspaces / status / snapshot / diff / log / show / tag / ops / restore / undo` 已可用；`--url` 未给时按「环境变量 `SKILLFORGE_VM_URL` → 数据根 `runtime.json`（`start` 写入实际端口）→ 默认 `127.0.0.1:8756`」解析。`diff` 输出中文摘要、统计、分组与 report_id；恢复 v1 详见实现契约 §2.4。
 
 M-12 Week 4：全局 `--data-root` 贯穿所有命令的地址发现；端口从已绑定 socket 交给服务器，不释放后重绑。服务完成启动才原子发布 runtime.json，正常关闭在释放数据根锁前删除本实例记录；异常退出可能保留旧地址，连接失败给出明确诊断。非法/截断/非字典运行记录回退默认发现。
 
-恢复 v1 新接口与 CLI 的字段、状态、失败重试见实现契约 §2.4；接口是新增能力，不改变现有 Revision/对象格式。Baseline 选择和 B 线报告继续独立推进。
+恢复 v1 新接口与 CLI 的字段、状态、失败重试见实现契约 §2.4；接口不改变现有 Revision/对象格式。命名锚点与内部 Baseline 已同事务推进，默认报告已接入。
 
 ## 4.7 运行与部署形态
 

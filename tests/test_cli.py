@@ -56,9 +56,33 @@ def test_cli_help_lists_commands() -> None:
     assert "init" in result.output
 
 
-def test_unimplemented_diff_exits_nonzero() -> None:
+def test_diff_prints_report_summary(monkeypatch) -> None:
+    from skillforge_vm.cli import main as cli
+
+    report = {
+        "summary": "检测到 1 处变化。",
+        "overview": {
+            "files": 1,
+            "changes": 1,
+            "clusters": 1,
+            "risk": "low",
+            "needs_review": 0,
+        },
+        "clusters": [{"label": "约束规则变化", "units": ["u-1"]}],
+        "report_id": "RPT-test",
+    }
+
+    def get(self, path, **params):
+        if path == "/api/workspaces":
+            return [{"workspace_id": "w"}]
+        assert params["layer"] == "L3"
+        return report
+
+    monkeypatch.setattr(cli.VmClient, "get", get)
     result = CliRunner().invoke(app, ["diff"])
-    assert result.exit_code == 1
+    assert result.exit_code == 0, result.output
+    assert "检测到 1 处变化" in result.output
+    assert "RPT-test" in result.output
 
 
 @pytest.mark.parametrize("command", [["restore", "tested"], ["undo"], ["restore", "--resume", "p"]])

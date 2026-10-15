@@ -23,11 +23,14 @@ from ..core.errors import (
 from ..core.locking import DataRootLock, SerialGate
 from ..core.types import ObjectType, SnapshotSource, SnapshotTrigger
 from ..db.connection import connect, transaction
+from ..diff import Layer
 from ..objectstore.objects import object_id
+from ..objectstore.store import ObjectStore
 from ..oplog.models import OpKind
 from ..oplog.restore import RestoreExecutor
 from ..oplog.restore_models import RestorePlan
 from ..oplog.store import OpStore
+from ..report import build_report
 from ..revision.models import Ref
 from ..revision.revset import resolve_revset
 from ..revision.store import RESERVED_REF_NAMES, RevisionStore
@@ -35,7 +38,7 @@ from ..watcher.engine import SnapshotEngine
 from ..watcher.scanner import scan_files
 from ..watcher.watcher import WorkspaceWatcher
 from ..workspace.manager import WorkspaceHandle, WorkspaceManager
-from .events import EVENT_SNAPSHOT_CREATED, EventBus
+from .events import EVENT_DIFF_READY, EVENT_PARSE_DEGRADED, EVENT_SNAPSHOT_CREATED, EventBus
 
 
 def _now_iso() -> str:
@@ -175,7 +178,19 @@ class WorkspaceService:
             "change_id": None if head is None else head.change_id,
             "has_pending_changes": pending,
             "pending_restore": pending_restore,
+            "baseline_revision": self._baseline(ws_id),
         }
+
+    def _baseline(self, ws_id: str) -> str | None:
+        handle = self._handle(ws_id)
+        conn = connect(handle.paths.db_file)
+        try:
+            try:
+                return RevisionStore(conn).get_ref(ws_id, "baseline").rev_id
+            except RefNotFoundError:
+                return None
+        finally:
+            conn.close()
 
     def _has_pending(self, handle: WorkspaceHandle, head: Any) -> bool:
         """只读判定「当前原始树是否与已提交 head 相同」，不写任何对象/元数据。"""
@@ -364,6 +379,7 @@ class WorkspaceService:
             ref = Ref(name=name, ws_id=ws_id, rev_id=target, updated_at=_now_iso())
             with transaction(conn):
                 store.set_ref(ref)  # 保留名（last）在此报 invalid_request
+                store.set_baseline(ws_id, target, ref.updated_at)
                 OpStore(conn).record(
                     ws_id=ws_id,
                     kind=OpKind.REF_SET,
@@ -380,7 +396,9 @@ class WorkspaceService:
         conn = connect(handle.paths.db_file)
         try:
             store = RevisionStore(conn)
-            refs = [ref.model_dump() for ref in store.list_refs(ws_id)]
+            refs = [
+                ref.model_dump() for ref in store.list_refs(ws_id) if ref.name != "baseline"
+            ]
             head = store.head(ws_id)
         finally:
             conn.close()
@@ -395,6 +413,103 @@ class WorkspaceService:
                 }
             )
         return refs
+
+    # ---- 对比 / 报告 ----
+
+    def diff(
+        self,
+        ws_id: str,
+        *,
+        base: str | None = None,
+        head: str | None = None,
+        layer: str = "L3",
+    ) -> dict[str, Any]:
+        handle = self._handle(ws_id)
+        try:
+            requested_layer = Layer(layer.upper())
+        except ValueError as exc:
+            raise InvalidRequestError(f"不支持的对比层级：{layer}", detail=layer) from exc
+        if base == "" or head == "":
+            raise InvalidRequestError("显式引用不能为空")
+        conn = connect(handle.paths.db_file)
+        try:
+            revisions = RevisionStore(conn)
+            current = revisions.head(ws_id)
+            if current is None:
+                raise RevisionNotFoundError("工作区还没有任何修订", detail=ws_id)
+            if head is None and self._has_pending(handle, current):
+                from ..core.errors import SnapshotUnstableError
+
+                raise SnapshotUnstableError("文件修改尚未形成快照，请等待 snapshot/created 后重试")
+            head_rev = revisions.get(
+                ws_id,
+                current.rev_id
+                if head is None
+                else resolve_revset(head, store=revisions, ws_id=ws_id, current=current.rev_id),
+            )
+            if base is None:
+                try:
+                    base_rev = revisions.get(ws_id, revisions.get_ref(ws_id, "baseline").rev_id)
+                except RefNotFoundError:
+                    base_rev = None
+            else:
+                base_rev = revisions.get(
+                    ws_id,
+                    resolve_revset(base, store=revisions, ws_id=ws_id, current=current.rev_id),
+                )
+            base_files = {} if base_rev is None else revisions.files(base_rev.rev_id)
+            head_files = revisions.files(head_rev.rev_id)
+            analysis_config = {
+                "max_text_bytes": handle.config.ignore.max_text_bytes,
+                "parsers": handle.config.parsers.model_dump(mode="json"),
+                "semantic_unit_extensions": handle.config.semantic_unit_extensions,
+            }
+            report, created = build_report(
+                conn,
+                ObjectStore(handle.paths.objects_dir),
+                ws_id=ws_id,
+                base=base_rev,
+                head=head_rev,
+                base_files=base_files,
+                head_files=head_files,
+                layer=requested_layer,
+                analysis_config=analysis_config,
+                max_text_bytes=handle.config.ignore.max_text_bytes,
+            )
+        finally:
+            conn.close()
+        if created:
+            self._publish(
+                {
+                    "type": EVENT_DIFF_READY,
+                    "workspace_id": ws_id,
+                    "report_id": report["report_id"],
+                    "revision_id": report["head"]["rev"],
+                }
+            )
+            for item in report["degraded"]:
+                self._publish(
+                    {
+                        "type": EVENT_PARSE_DEGRADED,
+                        "workspace_id": ws_id,
+                        "report_id": report["report_id"],
+                        "path": item["path"],
+                        "reason_code": item["reason_code"],
+                    }
+                )
+        return report
+
+    def diff_summary(
+        self, ws_id: str, *, base: str | None = None, head: str | None = None
+    ) -> dict[str, Any]:
+        report = self.diff(ws_id, base=base, head=head, layer="L3")
+        return {
+            "report_id": report["report_id"],
+            "base": report["base"],
+            "head": report["head"],
+            "summary": report["summary"],
+            "overview": report["overview"],
+        }
 
     # ---- 操作日志 ----
 

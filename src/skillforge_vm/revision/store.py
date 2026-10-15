@@ -13,7 +13,7 @@ from ..objectstore.store import FileBlob
 from .models import Change, Ref, Revision
 
 # 只读别名：``last`` 表示该工作区已提交 seq 最大的修订，禁止用户同名打标（§7.4）。
-RESERVED_REF_NAMES = frozenset({"last"})
+RESERVED_REF_NAMES = frozenset({"last", "baseline"})
 
 
 def _revision(row: sqlite3.Row) -> Revision:
@@ -166,6 +166,18 @@ class RevisionStore:
             DO UPDATE SET rev_id = excluded.rev_id, updated_at = excluded.updated_at
             """,
             (ref.name, ref.ws_id, ref.rev_id, ref.updated_at),
+        )
+
+    def set_baseline(self, ws_id: str, rev_id: str, updated_at: str) -> None:
+        """仅供锚点事务推进内部保留引用；不暴露为普通用户引用写入口。"""
+        self._conn.execute(
+            """
+            INSERT INTO ref (name, ws_id, rev_id, updated_at)
+            VALUES ('baseline', ?, ?, ?)
+            ON CONFLICT(name, ws_id)
+            DO UPDATE SET rev_id = excluded.rev_id, updated_at = excluded.updated_at
+            """,
+            (ws_id, rev_id, updated_at),
         )
 
     # ---- 路径索引 ----

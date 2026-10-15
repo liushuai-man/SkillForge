@@ -254,9 +254,33 @@ def ops(
 
 
 @app.command()
-def diff(ctx: typer.Context) -> None:
-    """默认 Working vs Baseline 对比（依赖 M-05/M-08，B 线尚未实现）。"""
-    _fail("diff 尚未实现：对比引擎与报告属于 B 线（M-05/M-08），本轮未接入。")
+def diff(
+    ctx: typer.Context,
+    base: Annotated[str | None, typer.Option(help="基线修订/锚点；省略使用 Baseline")] = None,
+    head: Annotated[str | None, typer.Option(help="目标修订/锚点；省略使用当前修订")] = None,
+    layer: Annotated[str, typer.Option(help="L0 / L1 / L2 / L3")] = "L3",
+    ws: WsOpt = None,
+) -> None:
+    """生成可复现的版本对比报告。"""
+    client = _client(ctx)
+    try:
+        workspace_id = _resolve_ws(client, ws)
+        report = client.get(
+            f"/api/workspaces/{workspace_id}/diff", base=base, head=head, layer=layer
+        )
+    except CliError as exc:
+        _fail(str(exc))
+    typer.echo(report["summary"])
+    overview = report["overview"]
+    typer.echo(
+        f"文件 {overview['files']} · 语义变化 {overview['changes']} · "
+        f"分组 {overview['clusters']} · 风险 {overview['risk']}"
+    )
+    for cluster in report["clusters"]:
+        typer.echo(f"- {cluster['label']}（{len(cluster['units'])}）")
+    if overview["needs_review"]:
+        typer.echo(f"待确认：{overview['needs_review']} 项")
+    typer.echo(f"报告：{report['report_id']}")
 
 
 def _confirm_restore(client: VmClient, ws: str, plan: dict, *, yes: bool) -> None:

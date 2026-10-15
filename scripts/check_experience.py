@@ -164,12 +164,22 @@ class ExperienceCheck:
     def anchor(self) -> None:
         self.cli("tag", "tested")
         self.anchor_id = self.revision("tested")["rev_id"]
+        require(self.status()["baseline_revision"] == self.anchor_id, "锚点没有推进 Baseline")
         self.anchor_bytes = self.file.read_bytes()
         self.cli("show", "tested")
         self.file.write_bytes("# 演示 Skill\n回答不要超过三段。\n".encode())
         self.wait_seq(3)
         require(self.revision("tested")["rev_id"] == self.anchor_id, "保存移动了锚点")
         require(self.revision("last")["rev_id"] != self.anchor_id, "最新修订没有推进")
+
+    def semantic_diff(self) -> None:
+        output = self.cli("diff")
+        require("报告：RPT-" in output, "CLI diff 没有返回规范报告")
+        report = self.get(f"/workspaces/{self.ws}/diff")
+        require(report["base"]["rev"] == self.anchor_id, "默认报告没有使用 Baseline")
+        require(report["head"]["rev"] == self.revision("last")["rev_id"], "报告不是当前修订")
+        require(report["layers"]["semantic"]["status"] == "computed", "L3 没有完成")
+        require(report["overview"]["changes"] >= 1, "语义变化未被识别")
 
     def restart(self) -> None:
         previous = self.get(f"/workspaces/{self.ws}/revisions")
@@ -236,6 +246,7 @@ class ExperienceCheck:
             ("保存自动生成 watch 修订（未调用手动 snapshot）", self.automatic_save),
             ("同内容保存五次不新增修订或操作日志", self.unchanged_save),
             ("打锚点后继续保存，锚点保持不变", self.anchor),
+            ("默认 Baseline 到 Working 的语义报告与 CLI diff", self.semantic_diff),
             ("终止服务、停机修改、重启补获及历史保留", self.restart),
             ("恢复预览后取消，文件与修订保持不变", self.restore_cancel),
             ("确认恢复锚点原文、重复计划幂等、锚点不移动", self.restore_confirm),
@@ -264,8 +275,7 @@ class ExperienceCheck:
                 "steps": self.steps,
                 "passed": not failed and len(self.steps) == len(checks),
                 "not_covered": [
-                    "语义/文本报告和真实对比界面",
-                    "Baseline 选择",
+                    "真实浏览器点击与视觉验收",
                     "恢复中途强杀与路径冲突（由 pytest 覆盖）",
                     "安装包、平台矩阵及完整产品验收",
                     "Ctrl+C 优雅退出",
@@ -275,7 +285,7 @@ class ExperienceCheck:
                 json.dumps(report, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
             )
-        print("[未覆盖] 报告/界面、Baseline、安装与平台验收；本次终止进程不等于 Ctrl+C 退出。")
+        print("[未覆盖] 真实浏览器点击、安装与平台验收；本次终止进程不等于 Ctrl+C 退出。")
         result = "失败" if failed else f"全部 {len(checks)} 项通过"
         print(f"结果：{result}；详情：{self.root / 'result.json'}")
         return int(failed)
