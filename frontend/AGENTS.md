@@ -26,9 +26,10 @@ npm run build          # TypeScript check, then Vite build to dist/
 npm run preview        # Preview the existing build
 ```
 
-The development server proxies `/api` to `http://127.0.0.1:8756`; start the backend
-separately using the root README. If the backend selects another port, account for
-the configured proxy when checking the development UI.
+Use `dev.cmd` from the repository root to start both servers. It passes the actual
+backend URL through `SKILLFORGE_DEV_API_URL`; Vite proxies `/api` to that URL.
+Standalone `npm run dev` defaults to `http://127.0.0.1:8756` unless that environment
+variable is supplied. Ctrl+C in the unified launcher stops only its owned processes.
 
 For behavior changes, run the build and verify the affected interaction against the
 local service. State explicitly when browser verification could not be performed.

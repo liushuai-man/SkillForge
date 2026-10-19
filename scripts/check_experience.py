@@ -13,6 +13,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from test_support import test_root
+
 
 def require(condition: bool, message: str) -> None:
     if not condition:
@@ -21,8 +23,7 @@ def require(condition: bool, message: str) -> None:
 
 class ExperienceCheck:
     def __init__(self) -> None:
-        project = Path(__file__).resolve().parents[1]
-        output = project / "dist" / "experience-check"
+        output = test_root() / "experience-check"
         output.mkdir(parents=True, exist_ok=True)
         self.root = Path(tempfile.mkdtemp(prefix="run-", dir=output))
         self.skill = self.root / "skill"

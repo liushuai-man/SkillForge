@@ -251,11 +251,13 @@ MVP 历史页使用稳定分页列表，显示版本时间、触发原因、锚�
 
 ### 5.2 交付证据
 
+- 开发入口验收：根目录 `dev.cmd --check` 实际启动 API/Vite，验证经 Vite 的 `/api/health` 可达后退出并清理本次进程；默认运行自动打开页面，Ctrl+C 执行同一清理。API 独立数据根与动态端口，Vite 代理实际地址；端口冲突或任一启动失败非零退出。测试 Skill 根为仓库同级 `Mytest/skillForge-testskills`（本机 `D:\mycode\Mytest\skillForge-testskills`），环境变量 `SKILLFORGE_TEST_ROOT` 可覆盖；pytest 每次 UUID 子目录，现有显式 `--basetemp` 参数仍优先。体验/安装/容量脚本分别使用独立子目录，既有清理策略不扩大至用户目录根。
+
 - GUI 启动验收：源码预构建网页可由正式服务首页提供，包内静态资源优先，`/api` 仍为真实接口；现有本机服务可用时不得重复启动写进程；无网页或构建/启动失败明确报错，不伪造已打开。GUI 与 CLI 共享数据根/运行记录/服务锁，启动器不直读业务数据库；发布包附带 Windows 双击入口，安装版 `gui` 不依赖 Node。
 
 - AC-19 安装包检查包含安装版语义抽取与 API/CLI 报告身份一致性，样例为约束修改；不允许仅网页静态资源可访问便认定完整对比可用。2026-10-19 当前代码与产物结果见 [交付检查记录](交付检查记录.md)，早期 A 线记录仍保留历史证据性质。
 
-一键体验入口：`uv run --no-sync python scripts/check_experience.py`。覆盖真实服务/CLI 初始化、监听生成修订（不调用手动 snapshot）、同内容五次保存不增加 Revision/Op、命名锚点不移动，以及终止服务后修改/重启补获与历史保留；新增恢复预览后取消、确认恢复、重复计划幂等、undo→undo，共 8 项。每次生成独立测试 Skill 和数据根，记录逐项 passed/failed/not_run 到 `dist/experience-check/run-*/result.json`，保留 CLI 和服务日志；失败非零退出，不把后续未运行项算通过。对应 AC-01/04/05/08/15/18 的部分行为，不替代完整 AC 或安装/界面验收；恢复中途强杀与路径冲突由 pytest 单独覆盖；进程终止不等同 Ctrl+C 优雅退出。
+一键体验入口：`uv run --no-sync python scripts/check_experience.py`。覆盖真实服务/CLI 初始化、监听生成修订（不调用手动 snapshot）、同内容五次保存不增加 Revision/Op、命名锚点不移动，以及终止服务后修改/重启补获与历史保留；新增恢复预览后取消、确认恢复、重复计划幂等、undo→undo，共 8 项。每次生成独立测试 Skill 和数据根，记录逐项 passed/failed/not_run 到 `Mytest/skillForge-testskills/experience-check/run-*/result.json`（相对仓库父目录），保留 CLI 和服务日志；失败非零退出，不把后续未运行项算通过。对应 AC-01/04/05/08/15/18 的部分行为，不替代完整 AC 或安装/界面验收；恢复中途强杀与路径冲突由 pytest 单独覆盖；进程终止不等同 Ctrl+C 优雅退出。
 
 每个实现任务只选相关 AC，不要求每次跑完整套件。报告：关联需求/AC、运行命令、结果、未运行原因、文档更新及剩余待决项。存储/事务变更须测失败路径；算法变更须测无缓存重算；接口变更须测真实消费模型，不能只测自己构造的字典。
 

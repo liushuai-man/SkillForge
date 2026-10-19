@@ -15,6 +15,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+from test_support import test_root
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -29,7 +31,7 @@ def main() -> None:
     uv = shutil.which("uv")
     if uv is None:
         raise SystemExit("验证需要已安装的 uv 和离线依赖缓存")
-    with tempfile.TemporaryDirectory(prefix="skillforge-installed-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="skillforge-installed-", dir=test_root()) as tmp:
         root = Path(tmp)
         venv = root / "venv"
         subprocess.run([uv, "venv", "--offline", str(venv)], check=True)

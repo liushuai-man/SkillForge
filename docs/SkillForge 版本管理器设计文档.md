@@ -820,6 +820,8 @@ M-12 Week 4：全局 `--data-root` 贯穿所有命令的地址发现；端口从
 
 ## 4.7 运行与部署形态
 
+开发统一入口为根目录 `dev.cmd` → `uv run python scripts/dev.py`：只使用已有 uv/npm 依赖；前端依赖缺失或 lock 更新时执行 npm ci，API 通过现有 CLI start 使用动态端口与独立 `dist/dev/data`，Vite 通过 `SKILLFORGE_DEV_API_URL` 代理该实际地址。启动浏览器、前端热更新，后端修改后重新运行；退出清理仅本次拥有的进程组，不复用或关闭用户其他服务。测试与验收 Skill 使用仓库同级 `Mytest/skillForge-testskills` 下独立目录，可由 `SKILLFORGE_TEST_ROOT` 覆盖；数据库仍须在对应 Skill 目录之外。pytest 临时根、体验检查、容量与安装验收遵守此约定；打包 staging 不属于 Skill。
+
 Windows 源码用户可双击根目录 `start-web.cmd`：uv 准备已声明依赖，入口按需构建网页、启动或复用服务并打开默认浏览器。发布构建同时输出同名入口，安装 wheel 后可双击该入口，运行时无需 Node。CLI 对应 `skillforge-vm gui`；关闭浏览器不会停止后台服务。它是服务进程的启动便利入口，不是新增桌面套壳或后台任务框架。
 
 | 形态 | 说明 |

@@ -12,6 +12,8 @@ import tempfile
 import time
 from pathlib import Path
 
+from test_support import test_root
+
 from skillforge_vm.api.service import WorkspaceService
 from skillforge_vm.db.connection import connect
 from skillforge_vm.objectstore.store import ObjectStore
@@ -43,7 +45,7 @@ def main():
         "allocated_bytes": None,
         "seed": 20261013,
     }
-    with tempfile.TemporaryDirectory(prefix="skillforge-benchmark-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="skillforge-benchmark-", dir=test_root()) as tmp:
         root = Path(tmp)
         result["volume"] = root.drive or "/"
         skill = root / "skill"

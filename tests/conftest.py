@@ -5,11 +5,20 @@
 
 from __future__ import annotations
 
+import os
+import uuid
 from pathlib import Path
 
 import pytest
 
 from skillforge_vm.workspace.manager import WorkspaceHandle, WorkspaceManager
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    if config.option.basetemp is None:
+        default = Path(__file__).resolve().parents[2] / "Mytest" / "skillForge-testskills"
+        root = Path(os.environ.get("SKILLFORGE_TEST_ROOT", default)).resolve()
+        config.option.basetemp = str(root / f"pytest-{uuid.uuid4().hex}")
 
 
 @pytest.fixture()

@@ -136,6 +136,8 @@ SkillForge/
 
 ## 命令清单
 
+开发环境统一入口（项目根 PowerShell）：`.\dev.cmd`，同时准备并启动 API 和 Vite；Ctrl+C 停止本次进程。测试/验收生成的 Skill 统一放仓库同级 `Mytest/skillForge-testskills`（本机 `D:\mycode\Mytest\skillForge-testskills`）的独立子目录；可用 `SKILLFORGE_TEST_ROOT` 覆盖，不把真实 Skill 放入自动清理的测试目录。现有用户/Codex 的正式 Skill 安装位置不受此测试规则影响。
+
 Read [frontend/AGENTS.md](frontend/AGENTS.md) before editing the frontend from a
 root session. Keep shared rules here; nested guides contain only local additions.
 Use `uv.lock` for Python and `frontend/package-lock.json` for npm dependencies.
@@ -149,7 +151,7 @@ uv run ruff format <files>   # 仅格式化本次修改文件，避免无关差�
 
 cd frontend
 npm ci                       # Install from frontend/package-lock.json
-npm run dev                  # 前端开发（/api 代理到 127.0.0.1:8756）
+npm run dev                  # 单独前端开发；dev.cmd 自动传入实际 API 地址
 npm run build                # 构建到 frontend/dist（打包时内置产物）
 ```
 
