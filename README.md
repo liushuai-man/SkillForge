@@ -13,6 +13,8 @@ Agent Skill 的版本管理与版本对比内核（SkillForge 版本管理器 / 
 
 设计文档描述目标能力，不代表功能已经实现。开始开发前先读 [AGENTS.md](AGENTS.md)，按任务查阅对应契约和验收用例；MVP 范围以设计文档 §8.1 为准。
 
+首次使用请先读 [用户使用指南](docs/用户使用指南.md)：安装与启动、Web 操作、自动快照、stable/tested 基线和完整示例。当前交付验证与限制见 [交付检查记录](docs/交付检查记录.md)。
+
 ## Agent 协作规则
 
 共享规则维护在根目录 [AGENTS.md](AGENTS.md)，前端局部规则见 [frontend/AGENTS.md](frontend/AGENTS.md)；从根目录修改前端时也需先读局部规则。个人覆盖使用可选的 `AGENTS.LOCAL.md`（已忽略，不提交）。领域术语维护在根目录 [CONTEXT.md](CONTEXT.md)。
@@ -59,7 +61,7 @@ uv run skillforge-vm ops                            # 操作日志
 - **受控恢复已实现**：`skillforge-vm restore tested` 先保护当前内容、预览清单并确认，再恢复整个 Skill；`skillforge-vm undo` 撤销最近一次恢复（包括撤销撤销）。恢复后有新改动时拒绝盲目覆盖；中断后 `status` 显示计划，可 `restore --resume PLAN` 继续，自动化须显式 `--yes`。请先保存并暂停编辑器写入；未保存缓冲区无法保护。部分文件恢复、文件/目录类型转换、撤销锚点暂不支持。
 - **尚未实现**：Codex/Agent 行为执行与自动评测、跨机器工作区导入导出、区间对比与独立报告导出；M-13 仍只有类型契约，报告的 `behavior` 为 `null`。
 
-> 安装包（pipx + 预构建前端、终端用户免 Node）与跨平台验证尚未完成，见设计 §4.7 与实现契约 §6。
+> 包含预构建前端、运行时免 Node 的候选安装包已通过 Windows 本机干净虚拟环境安装与运行验证；pipx 实装、跨平台与完整 G3 尚未签收，见交付检查记录。
 
 ## 在 Codex 中测试 Skill 版本
 
@@ -75,8 +77,8 @@ SkillForge 当前不运行 Codex，也不自动评分；只复制项目文件只
 uv run --no-sync python scripts/check_experience.py
 ```
 
-脚本自动启动随机端口的真实服务、CLI 纳管测试 Skill，检查自动快照、相同内容五次保存不新增修订/Op、锚点固定，以及停止服务后修改再重启补获、恢复预览后取消、确认恢复、重复计划幂等、撤销及撤销撤销，共 8 项。无需另开终端或手动编辑。每次新建独立目录，结果及服务/CLI 日志保留在 `dist/experience-check/run-*/`；失败退出码为 1，后续依赖步骤标记未运行。仅操作生成的测试 Skill，不接触现有用户目录。Windows 使用真实解释器避免 uv 启动器 PID 差异；停止测试服务使用终止进程，不等同 Ctrl+C 优雅退出验收。报告、界面、Baseline 与安装包验收不计入此脚本通过项；恢复中途强杀和路径冲突由 pytest 单独覆盖。
+脚本自动启动随机端口的真实服务、CLI 纳管测试 Skill，检查自动快照、相同内容五次保存不新增修订/Op、锚点固定，以及停止服务后修改再重启补获、恢复预览后取消、确认恢复、重复计划幂等、撤销及撤销撤销，共 9 项，包含默认 Baseline→Working 报告与 CLI diff。无需另开终端或手动编辑。每次新建独立目录，结果及服务/CLI 日志保留在 `dist/experience-check/run-*/`；失败退出码为 1，后续依赖步骤标记未运行。仅操作生成的测试 Skill，不接触现有用户目录。Windows 使用真实解释器避免 uv 启动器 PID 差异；停止测试服务使用终止进程，不等同 Ctrl+C 优雅退出验收。真实浏览器界面与安装包验收不计入此脚本通过项；恢复中途强杀和路径冲突由 pytest 单独覆盖。
 
 开发机先运行 `uv run python scripts/build_release.py`（使用现有 Node 依赖与离线 Python 构建缓存），生成包含前端资源的 `dist/skillforge_vm-0.1.0-py3-none-any.whl`。终端用户可用 `pipx install <wheel路径>` 安装，运行时不需要 Node。
 
-运行 `uv run python scripts/verify_release.py <wheel路径>` 检查离线缓存安装与服务；缓存不足时会明确失败。可显式追加 `--reuse-installed-deps` 仅验证包运行，此结果不算干净环境依赖安装通过。安装包仍需重新构建并完成真实浏览器及干净机器验收后，才能作为当前完整 MVP 的发布证据。
+运行 `uv run python scripts/verify_release.py <wheel路径>` 检查离线缓存安装与服务；缓存不足时会明确失败。可显式追加 `--reuse-installed-deps` 仅验证包运行，此结果不算干净环境依赖安装通过。当前候选包已完成本机干净虚拟环境安装及无 Node 运行验证；真实浏览器验证与未测平台边界见交付检查记录，不因此宣称完整 G3 通过。

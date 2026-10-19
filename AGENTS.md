@@ -167,6 +167,8 @@ Document locations (relative to the repository root):
 | `SkillForge 版本管理器分工与交付计划.md` | 两人分工、每周任务、双方验收标准 | 范围 / 排期变化 |
 | `SkillForge 版本管理器实现契约与验收.md` | 模块交接、事务恢复、报告/错误/事件契约、AC 用例、决策记录 | 交接模型 / 状态 / 失败语义 / 验收变化 |
 | `Codex Skill 版本测试指南.md` | 在 Codex 中人工复测不同 Skill 版本的操作流程、交付限制与记录模板 | Codex Skill 发现方式、人工版本复测流程或跨机器交付边界变化 |
+| `用户使用指南.md` | 安装启动、Web/CLI 操作、自动快照、基线、恢复及完整示例 | 用户操作流程或功能限制变化 |
+| `交付检查记录.md` | 当前 MVP 交付检查、实际证据及未验证边界；issue 4/5 覆盖情况 | 交付验证结果或剩余问题变化 |
 | `A线 Week4 交付与验收记录.md` / `A线性能实测.json` | A 线提交、安装产物、实测数据与未验证边界 | A 线交付验收结果变化 |
 
 Except for `CONTEXT.md` and the explicitly prefixed `docs/adr/*.md`, the table's
