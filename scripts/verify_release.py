@@ -84,12 +84,18 @@ def main() -> None:
             )
             try:
                 runtime = root / "data" / "runtime.json"
-                for _ in range(200):
+                deadline = time.monotonic() + 45
+                while time.monotonic() < deadline:
                     if runtime.is_file():
                         break
                     if service.poll() is not None:
                         raise RuntimeError((root / "service.log").read_text(encoding="utf-8"))
                     time.sleep(0.05)
+                if not runtime.is_file():
+                    raise RuntimeError(
+                        "等待安装版服务启动超时：\n"
+                        + (root / "service.log").read_text(encoding="utf-8")
+                    )
                 base = json.loads(runtime.read_text(encoding="utf-8"))["base_url"]
                 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -114,6 +120,7 @@ def main() -> None:
                 html = get("/").decode("utf-8")
                 for asset in re.findall(r'(?:src|href)="(/assets/[^"?#]+)', html):
                     assert get(asset)
+                assert b"<svg" in get("/icons/files.svg")
                 skill = root / "skill"
                 skill.mkdir()
                 before = b"# Constraints\nMust retain history.\n"
