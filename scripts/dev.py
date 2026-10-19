@@ -15,7 +15,11 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from process_job import ProcessJob
 from test_support import test_root
+
+from skillforge_vm.cli.client import CliError, read_runtime_base_url
+from skillforge_vm.cli.gui import _local_url
 
 
 def ready(url: str) -> bool:
@@ -41,10 +45,14 @@ def ready(url: str) -> bool:
 def stop(process: subprocess.Popen) -> None:
     if process.poll() is not None:
         return
-    if os.name == "nt":
-        process.send_signal(signal.CTRL_BREAK_EVENT)
-    else:
-        os.killpg(process.pid, signal.SIGTERM)
+    try:
+        if os.name == "nt":
+            process.send_signal(signal.CTRL_BREAK_EVENT)
+        else:
+            os.killpg(process.pid, signal.SIGTERM)
+    except OSError:
+        if process.poll() is None:
+            process.terminate()
     try:
         process.wait(timeout=5)
     except subprocess.TimeoutExpired:
@@ -64,7 +72,8 @@ def main() -> None:
     project = Path(__file__).resolve().parents[1]
     frontend = project / "frontend"
     npm = shutil.which("npm")
-    if npm is None:
+    node = shutil.which("node")
+    if npm is None or node is None:
         raise SystemExit("开发启动需要 Node.js/npm，请先安装。")
     marker = frontend / "node_modules" / ".package-lock.json"
     if (
@@ -76,6 +85,12 @@ def main() -> None:
     output.mkdir(parents=True, exist_ok=True)
     data = output / "data"
     runtime = data / "runtime.json"
+    existing = read_runtime_base_url(data_root=data)
+    if existing and ready(_local_url(existing) + "/api/health"):
+        raise RuntimeError(
+            f"开发数据根已有服务运行：{existing}。请在原开发窗口按 Ctrl+C 停止后再启动；"
+            f"数据目录：{data}（不会自动终止其他服务）。"
+        )
     env = dict(os.environ)
     env.pop("SKILLFORGE_VM_URL", None)
     env["SKILLFORGE_VM_DATA_ROOT"] = str(data)
@@ -92,8 +107,9 @@ def main() -> None:
         else {"start_new_session": True}
     )
     processes: list[subprocess.Popen] = []
+    job = ProcessJob()
     try:
-        with (output / "service.log").open("w", encoding="utf-8") as log:
+        with (output / "service.log").open("a", encoding="utf-8") as log:
             backend = subprocess.Popen(
                 [
                     getattr(sys, "_base_executable", sys.executable),
@@ -110,11 +126,20 @@ def main() -> None:
                 **group,
             )
             processes.append(backend)
+            job.add(backend.pid)
             deadline = time.monotonic() + 30
             base = ""
             while time.monotonic() < deadline:
                 if backend.poll() is not None:
-                    raise RuntimeError(f"开发服务启动失败，查看 {output / 'service.log'}")
+                    message = (output / "service.log").read_text(encoding="utf-8", errors="replace")
+                    reason = (
+                        "开发数据根已被其他服务占用"
+                        if "WorkspaceBusyError" in message
+                        else message[-2000:].strip()
+                    )
+                    raise RuntimeError(
+                        f"开发服务启动失败：{reason}\n日志：{output / 'service.log'}"
+                    )
                 try:
                     recorded = json.loads(runtime.read_text(encoding="utf-8"))
                     if recorded["pid"] == backend.pid and ready(
@@ -135,10 +160,8 @@ def main() -> None:
                 )
             web = subprocess.Popen(
                 [
-                    npm,
-                    "run",
-                    "dev",
-                    "--",
+                    node,
+                    str(frontend / "node_modules" / "vite" / "bin" / "vite.js"),
                     "--host",
                     "127.0.0.1",
                     "--port",
@@ -151,6 +174,7 @@ def main() -> None:
                 **group,
             )
             processes.append(web)
+            job.add(web.pid)
             deadline = time.monotonic() + 30
             while not ready(page + "/api/health"):
                 if web.poll() is not None or time.monotonic() >= deadline:
@@ -168,9 +192,18 @@ def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        for process in reversed(processes):
-            stop(process)
+        try:
+            for process in reversed(processes):
+                try:
+                    stop(process)
+                except (OSError, subprocess.SubprocessError) as exc:
+                    print(f"进程 {process.pid} 清理异常：{exc}", file=sys.stderr)
+        finally:
+            job.close()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (CliError, OSError, RuntimeError, subprocess.CalledProcessError) as exc:
+        raise SystemExit(f"启动失败：{exc}") from None

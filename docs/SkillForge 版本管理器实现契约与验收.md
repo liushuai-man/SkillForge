@@ -251,6 +251,8 @@ MVP 历史页使用稳定分页列表，显示版本时间、触发原因、锚�
 
 ### 5.2 交付证据
 
+- Windows 开发启动恢复回归：正常 `dev.cmd --check` 完成后 API/Vite 退出；已有开发服务时第二次 `dev.cmd --check` 不启动第二个写进程，显示地址且无启动器 Python 堆栈，暂停后 exit code 仍为 1；直接强制结束实际 `dev.py` 进程后，本次 API/Vite 及孙进程由 Job 回收、数据根锁可重新获取，无关对照进程存活。保留陈旧 runtime/锁文件再次启动仍能成功。控制台信号抛 OSError 时仍清理本次进程；任何清理异常不能阻断最外层 Job 释放。不把这项进程退出验证当作磁盘断电/全部事务窗口验收。
+
 - 开发入口验收：根目录 `dev.cmd --check` 实际启动 API/Vite，验证经 Vite 的 `/api/health` 可达后退出并清理本次进程；默认运行自动打开页面，Ctrl+C 执行同一清理。API 独立数据根与动态端口，Vite 代理实际地址；端口冲突或任一启动失败非零退出。测试 Skill 根为仓库同级 `Mytest/skillForge-testskills`（本机 `D:\mycode\Mytest\skillForge-testskills`），环境变量 `SKILLFORGE_TEST_ROOT` 可覆盖；pytest 每次 UUID 子目录，现有显式 `--basetemp` 参数仍优先。体验/安装/容量脚本分别使用独立子目录，既有清理策略不扩大至用户目录根。
 
 - GUI 启动验收：源码预构建网页可由正式服务首页提供，包内静态资源优先，`/api` 仍为真实接口；现有本机服务可用时不得重复启动写进程；无网页或构建/启动失败明确报错，不伪造已打开。GUI 与 CLI 共享数据根/运行记录/服务锁，启动器不直读业务数据库；发布包附带 Windows 双击入口，安装版 `gui` 不依赖 Node。

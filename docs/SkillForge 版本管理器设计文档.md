@@ -822,6 +822,8 @@ M-12 Week 4：全局 `--data-root` 贯穿所有命令的地址发现；端口从
 
 开发统一入口为根目录 `dev.cmd` → `uv run python scripts/dev.py`：只使用已有 uv/npm 依赖；前端依赖缺失或 lock 更新时执行 npm ci，API 通过现有 CLI start 使用动态端口与独立 `dist/dev/data`，Vite 通过 `SKILLFORGE_DEV_API_URL` 代理该实际地址。启动浏览器、前端热更新，后端修改后重新运行；退出清理仅本次拥有的进程组，不复用或关闭用户其他服务。测试与验收 Skill 使用仓库同级 `Mytest/skillForge-testskills` 下独立目录，可由 `SKILLFORGE_TEST_ROOT` 覆盖；数据库仍须在对应 Skill 目录之外。pytest 临时根、体验检查、容量与安装验收遵守此约定；打包 staging 不属于 Skill。
 
+Windows 开发进程由标准库调用系统 Job Object，设置 kill-on-close、不继承句柄，仅加入本次 API 与直接由 Node 启动的本地 Vite；正常退出先发退出信号，控制台不可用则终止本次进程，最外层释放 Job；启动器被强制结束时由操作系统回收其子树，避免孤儿后端继续占锁。Job 创建/加入失败不静默降级，终止本次进程并报错。重复启动预检 runtime 与本机健康接口，已有服务时明确显示地址并拒绝再启动，不自动接管/杀死其他服务；数据根独占锁仍为最终并发保护，不删除锁文件。服务日志追加保留，启动失败直接显示具体原因和日志路径，批处理暂停后仍返回非零码。
+
 Windows 源码用户可双击根目录 `start-web.cmd`：uv 准备已声明依赖，入口按需构建网页、启动或复用服务并打开默认浏览器。发布构建同时输出同名入口，安装 wheel 后可双击该入口，运行时无需 Node。CLI 对应 `skillforge-vm gui`；关闭浏览器不会停止后台服务。它是服务进程的启动便利入口，不是新增桌面套壳或后台任务框架。
 
 | 形态 | 说明 |
