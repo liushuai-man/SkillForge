@@ -100,7 +100,9 @@ def main() -> None:
                     assert get(asset)
                 skill = root / "skill"
                 skill.mkdir()
-                (skill / "SKILL.md").write_bytes(b"# before")
+                before = b"# Constraints\nMust retain history.\n"
+                after = b"# Constraints\nMust retain history and evidence.\n"
+                (skill / "SKILL.md").write_bytes(before)
                 subprocess.run(
                     [str(python), "-m", "skillforge_vm.cli.main", "init", str(skill)],
                     cwd=root,
@@ -110,13 +112,31 @@ def main() -> None:
                 )
                 ws = json.loads(get("/api/workspaces"))["data"][0]["workspace_id"]
                 time.sleep(0.7)
-                (skill / "SKILL.md").write_bytes(b"# after")
+                (skill / "SKILL.md").write_bytes(after)
                 for _ in range(100):
                     status = json.loads(get(f"/api/workspaces/{ws}/status"))["data"]
                     if status["head_seq"] == 2:
                         break
                     time.sleep(0.05)
                 assert status["head_seq"] == 2 and not status["has_pending_changes"]
+                report = json.loads(get(f"/api/workspaces/{ws}/diff?base=@~1&head=@&layer=L3"))[
+                    "data"
+                ]
+                assert report["overview"]["changes"] == 1
+                assert report["layers"]["semantic"]["units"][0]["op"] == "modify"
+                assert report["layers"]["text"]["hunks"]
+                assert report["behavior"] is None
+                cli_report = subprocess.run(
+                    [str(python), "-m", "skillforge_vm.cli.main", "diff", "--base", "@~1"],
+                    cwd=root,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    check=True,
+                    timeout=15,
+                )
+                assert report["report_id"] in cli_report.stdout
                 subprocess.run(
                     [str(python), "-m", "skillforge_vm.cli.main", "tag", "tested"],
                     cwd=root,
@@ -125,8 +145,8 @@ def main() -> None:
                     timeout=15,
                 )
                 for command, expected, seq in (
-                    (["restore", "@~1", "--yes"], b"# before", 3),
-                    (["undo", "--yes"], b"# after", 4),
+                    (["restore", "@~1", "--yes"], before, 3),
+                    (["undo", "--yes"], after, 4),
                 ):
                     subprocess.run(
                         [str(python), "-m", "skillforge_vm.cli.main", *command],
@@ -138,7 +158,10 @@ def main() -> None:
                     assert (skill / "SKILL.md").read_bytes() == expected
                     status = json.loads(get(f"/api/workspaces/{ws}/status"))["data"]
                     assert status["head_seq"] == seq and status["pending_restore"] is None
-                print("PASS: wheel 安装、无 Node PATH、网页资源、CLI、自动快照、锚点、恢复与撤销")
+                print(
+                    "PASS: wheel 安装、无 Node PATH、网页资源、CLI、自动快照、"
+                    "语义报告、锚点、恢复与撤销"
+                )
                 if args.reuse_installed_deps:
                     print("LIMITATION: 复用现有依赖，干净环境依赖安装未验证")
             finally:
