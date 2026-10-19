@@ -71,6 +71,19 @@ def test_lower_layer_does_not_claim_semantic_computed(tmp_path) -> None:
     assert report["layers"]["semantic"]["status"] == "not_requested"
     assert report["overview"]["changes"] is None
     assert report["overview"]["risk"] == "unknown"
+    assert "未计算" in report["summary"]
+    assert "0 处语义变化" not in report["summary"]
+
+
+def test_summary_uses_readable_chinese_risk(tmp_path) -> None:
+    service, ws, file = _service(tmp_path, "# Constraints\n必须保留历史\n")
+    service.set_ref(ws, "tested")
+    file.write_text("# Constraints\n必须保留历史和证据\n", encoding="utf-8")
+    service.snapshot(ws)
+    report = service.diff(ws)
+    assert report["overview"]["risk"] == "medium"
+    assert "中风险" in report["summary"]
+    assert "medium" not in report["summary"]
 
 
 def test_repeated_unchanged_rules_do_not_become_modifications(tmp_path) -> None:

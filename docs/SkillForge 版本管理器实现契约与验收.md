@@ -230,6 +230,8 @@ MVP 历史页使用稳定分页列表，显示版本时间、触发原因、锚�
 
 ### 5.1 语义质量样例口径
 
+- AC-12/13 摘要验收：L1 报告的语义计数为 null，模板显示“未计算”且不得显示零语义变化；L3 的风险枚举仍为 medium 等英文值，用户摘要显示“中风险”等中文。模板变化形成新算法身份，不改写历史缓存。
+
 - AC-07/10 JSON 回归补充：`role` 从 writer 改 reviewer 必须产生 role.modify；嵌套示例中的 tools 不单独抽成工具要求；BOM/中文/emoji 的 span 必须逐字节回指原文；排版不改规范值，workflow 数组调序必须改变规范值。对应 `tests/test_semantics.py` 与 `tests/test_diff_report.py`，不修改原有冻结样例。
 
 - AC-10/11 回归补充：重复相同约束后仅追加空行，语义 units 必须为空且不产生虚假 medium 风险；有效 JSON 清空、空 JSON 修成有效内容时，实际存在的任一侧无法解析均按该文件降至 L1，文字证据仍保留且总风险为 unknown。样例追加到 `tests/test_diff_report.py`，算法版本变化不得复用旧错误结果。

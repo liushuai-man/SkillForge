@@ -77,14 +77,13 @@ def _layer_status(requested: Layer, depth: int, degraded: list[dict[str, str]]) 
     return "computed"
 
 
-def _summary(files: int, changes: int, clusters: int, risk: str, reviews: int) -> str:
+def _summary(files: int, changes: int | None, clusters: int, risk: str, reviews: int) -> str:
     if not files:
         return "当前版本与基线没有变化。"
     suffix = f"，其中 {reviews} 项需要确认" if reviews else ""
-    return (
-        f"检测到 {files} 个文件、{changes} 处语义变化，"
-        f"归为 {clusters} 组，风险为{risk}{suffix}。"
-    )
+    semantic = "语义层未计算" if changes is None else f"已识别 {changes} 处语义变化"
+    risk_label = {"high": "高", "medium": "中", "low": "低", "unknown": "未知"}[risk]
+    return f"检测到 {files} 个文件变化，{semantic}，归为 {clusters} 组，{risk_label}风险{suffix}。"
 
 
 def build_report(
@@ -138,7 +137,7 @@ def build_report(
         },
         "summary": _summary(
             len(result.metadata_files),
-            len(units),
+            len(units) if layer is Layer.L3 else None,
             len(clusters),
             risk["level"],
             len(result.needs_review),
