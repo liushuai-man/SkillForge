@@ -1,84 +1,135 @@
 # SkillForge
 
-Agent Skill 的版本管理与版本对比内核（SkillForge 版本管理器 / SkillForge VM）。
+本机 Skill 版本管理器：**修改文件并保存，自动记录快照，在网页或终端查看版本差异。** 支持命名基线、恢复旧版本和撤销恢复。
 
-**保存即快照，比较即结论** —— 用户只负责改，版本、快照、差异、对比全部自动完成。
+## 1. 从源码启动
 
-设计文档见 [docs/](docs/)：
+以下命令以 Windows PowerShell 为例，在项目根目录执行。需要安装 **uv**；使用源码网页还需要 **Node.js / npm**。仓库使用 Python 3.12，`uv sync` 负责准备 Python 环境和依赖。
 
-- [SkillForge 版本管理器设计文档](docs/SkillForge%20版本管理器设计文档.md)
-- [SkillForge 版本管理器分工与交付计划](docs/SkillForge%20版本管理器分工与交付计划.md)
-- [SkillForge 版本管理器实现契约与验收](docs/SkillForge%20版本管理器实现契约与验收.md)
-- [Codex Skill 版本测试指南](docs/Codex%20Skill%20版本测试指南.md)
-
-设计文档描述目标能力，不代表功能已经实现。开始开发前先读 [AGENTS.md](AGENTS.md)，按任务查阅对应契约和验收用例；MVP 范围以设计文档 §8.1 为准。
-
-首次使用请先读 [用户使用指南](docs/用户使用指南.md)：安装与启动、Web 操作、自动快照、stable/tested 基线和完整示例。当前交付验证与限制见 [交付检查记录](docs/交付检查记录.md)。
-
-## Agent 协作规则
-
-共享规则维护在根目录 [AGENTS.md](AGENTS.md)，前端局部规则见 [frontend/AGENTS.md](frontend/AGENTS.md)；从根目录修改前端时也需先读局部规则。个人覆盖使用可选的 `AGENTS.LOCAL.md`（已忽略，不提交）。领域术语维护在根目录 [CONTEXT.md](CONTEXT.md)。
-
-仓库当前没有随项目提交的 `SKILL.md` 技能；用户环境中的技能（如 `project-agent-init`）不是项目依赖，也不保证其他开发者已安装。规则文件提供行为指引，不能代替测试或 CI 的执行结果。
-
-## 开发环境
-
-本仓库使用 [uv](https://docs.astral.sh/uv/) 管理 Python 3.12 与后端依赖。
-
-```bash
-uv sync                 # 创建 .venv 并安装后端依赖
-uv run pytest           # 运行测试
-uv run ruff check .      # 后端静态检查
-uv run ruff format <本次修改的Python文件>  # 只格式化指定文件
-
-cd frontend
-npm ci                  # 按 package-lock.json 安装依赖
-npm run dev             # 前端开发
-npm run typecheck       # TypeScript 检查
-npm run build           # 类型检查并构建前端
-```
-
-命令入口和配置已按 `pyproject.toml`、`frontend/package.json` 与锁文件核对；实际执行是否通过，以每次任务的验证记录为准。前端没有单独的 test、lint 或 format 脚本。
-
-## 快速开始（本机服务 + CLI）
-
-CLI 是服务的客户端（不直连数据库）：先启动服务，再用业务命令操作。
-
-```bash
-uv run skillforge-vm --data-root <数据目录> start   # 启动本机服务（默认 127.0.0.1:8756）
-uv run skillforge-vm --data-root <数据目录> init <Skill目录>               # 纳管一个 Skill
-uv run skillforge-vm status                         # 是否有未纳管改动
-uv run skillforge-vm snapshot --message "改标题"     # 手动快照
-uv run skillforge-vm tag tested                     # 打锚点
-uv run skillforge-vm log                            # 修订时间线
-uv run skillforge-vm ops                            # 操作日志
-```
-
-- 自定义数据目录时，每个命令均传全局 `--data-root <数据目录>`（放在子命令前），或统一设置 `SKILLFORGE_VM_DATA_ROOT`；以下省略目录的命令使用默认数据根。
-- 服务端口被占用时自动改用系统分配端口，并把实际地址写入数据根的 `runtime.json`；后续命令据此复用同一服务，也可用 `--url` 或环境变量 `SKILLFORGE_VM_URL` 覆盖。
-- HTTP 接口见 `http://127.0.0.1:8756/api/docs`；统一返回外壳为 `{ok, data, error, request_id}`。
-- **当前已实现**：工作区纳管、文件监听与快照、修订/变更/引用、操作日志、L0～L3 静态对比与规范报告、Baseline、基础 Web 对比/历史、本机服务与 CLI。
-- **受控恢复已实现**：`skillforge-vm restore tested` 先保护当前内容、预览清单并确认，再恢复整个 Skill；`skillforge-vm undo` 撤销最近一次恢复（包括撤销撤销）。恢复后有新改动时拒绝盲目覆盖；中断后 `status` 显示计划，可 `restore --resume PLAN` 继续，自动化须显式 `--yes`。请先保存并暂停编辑器写入；未保存缓冲区无法保护。部分文件恢复、文件/目录类型转换、撤销锚点暂不支持。
-- **尚未实现**：Codex/Agent 行为执行与自动评测、跨机器工作区导入导出、区间对比与独立报告导出；M-13 仍只有类型契约，报告的 `behavior` 为 `null`。
-
-> 包含预构建前端、运行时免 Node 的候选安装包已通过 Windows 本机干净虚拟环境安装与运行验证；pipx 实装、跨平台与完整 G3 尚未签收，见交付检查记录。
-
-## 在 Codex 中测试 Skill 版本
-
-仓库级 Skill 推荐放在 `<项目>/.codex/skills/<skill-name>/`，SkillForge 只纳管这个 Skill 目录；固定测试用例放在相邻的 `<项目>/evals/`，避免测试记录进入 Skill 快照。测试不同版本时，先 `restore <ref>`，再新建 Codex 任务并用同一批显式、隐式和负向用例复测。完整步骤、跨电脑交付限制与结果模板见 [Codex Skill 版本测试指南](docs/Codex%20Skill%20版本测试指南.md)。
-
-SkillForge 当前不运行 Codex，也不自动评分；只复制项目文件只包含当前 Skill 内容，不包含作者电脑上的 Revision、锚点和对象库。
-
-## 构建与验证安装包
-
-想一次验证当前 A 线体验，在项目根目录运行：
+### 终端 A：启动服务
 
 ```powershell
-uv run --no-sync python scripts/check_experience.py
+uv sync
+uv run skillforge-vm start
 ```
 
-脚本自动启动随机端口的真实服务、CLI 纳管测试 Skill，检查自动快照、相同内容五次保存不新增修订/Op、锚点固定，以及停止服务后修改再重启补获、恢复预览后取消、确认恢复、重复计划幂等、撤销及撤销撤销，共 9 项，包含默认 Baseline→Working 报告与 CLI diff。无需另开终端或手动编辑。每次新建独立目录，结果及服务/CLI 日志保留在 `dist/experience-check/run-*/`；失败退出码为 1，后续依赖步骤标记未运行。仅操作生成的测试 Skill，不接触现有用户目录。Windows 使用真实解释器避免 uv 启动器 PID 差异；停止测试服务使用终止进程，不等同 Ctrl+C 优雅退出验收。真实浏览器界面与安装包验收不计入此脚本通过项；恢复中途强杀和路径冲突由 pytest 单独覆盖。
+保持这个终端运行。服务默认地址为 `http://127.0.0.1:8756`，日志会显示实际地址和数据目录。**网页和业务命令都依赖此服务。**
 
-开发机先运行 `uv run python scripts/build_release.py`（使用现有 Node 依赖与离线 Python 构建缓存），生成包含前端资源的 `dist/skillforge_vm-0.1.0-py3-none-any.whl`。终端用户可用 `pipx install <wheel路径>` 安装，运行时不需要 Node。
+### 终端 B：纳管 Skill
 
-运行 `uv run python scripts/verify_release.py <wheel路径>` 检查离线缓存安装与服务；缓存不足时会明确失败。可显式追加 `--reuse-installed-deps` 仅验证包运行，此结果不算干净环境依赖安装通过。当前候选包已完成本机干净虚拟环境安装及无 Node 运行验证；真实浏览器验证与未测平台边界见交付检查记录，不因此宣称完整 G3 通过。
+另开终端，进入同一项目根目录，将示例路径换成你的 Skill 目录：
+
+```powershell
+uv run skillforge-vm init "D:\skills\example" --name example
+uv run skillforge-vm workspaces
+```
+
+纳管会保存第一个版本，之后自动监听这个目录。用编辑器修改其中的 `SKILL.md` 并保存，就会自动产生新快照，无需手动提交。相同内容反复保存不会生成空版本。
+
+**只使用终端到这里即可**，继续看第 3 节；需要网页则完成下一节。
+
+## 2. 使用可视化界面
+
+### 终端 C：启动网页
+
+保持服务运行，另开终端，从项目根目录执行：
+
+```powershell
+cd frontend
+npm ci
+npm run dev
+```
+
+打开 Vite 输出的地址，通常为 **http://localhost:5173/**。`npm ci` 首次使用或依赖变化后执行即可，以后只需 `npm run dev`。
+
+源码模式请打开前端地址；后端首页未内置网页时可能返回 404。`/api/docs` 是接口调试页，不是版本管理界面。开发代理固定连接 `127.0.0.1:8756`；若后端因端口占用选择了其他端口，需核对实际服务与代理目标。
+
+### 页面操作
+
+| 要做什么 | 怎么操作 |
+| --- | --- |
+| 选择 Skill | 右上角选择工作区，核对“监听目录”；刚纳管后若未出现，刷新页面 |
+| 查看最新变化 | 保存文件后自动更新版本对、变化结论与风险数量；更新期间标记旧结果 |
+| 查看修改前后 | 展开“语义结论”的证据，或切换“原文差异”，在“变更文件”中选择路径 |
+| 查看历史 | 在“历史版本”翻页；新版本出现时点击“查看最新历史” |
+| 比较两个版本 | 勾选两个版本，点击“比较所选版本”；或直接点击“与当前比较” |
+| 设置参考版本 | 在“建立基线”输入 `tested`、`stable` 等名字，点击“创建锚点” |
+| 恢复旧版本 | 点击对应版本的“恢复到这里”，核对变更清单后确认 |
+| 撤销恢复 | 点击“撤销最近一次恢复”，核对清单后确认 |
+
+原文差异是**只读的变更片段**，不是完整快照文件浏览器。二进制、超限或解析失败的文件会显示降级原因；没有语义分组不代表没有文件变化。
+
+## 3. 使用终端
+
+保持服务运行，在项目根目录的另一个终端执行：
+
+| 命令 | 作用 |
+| --- | --- |
+| `uv run skillforge-vm workspaces` | 列出纳管目录和工作区 ID |
+| `uv run skillforge-vm status` | 查看当前版本、未捕获改动和未完成恢复计划 |
+| `uv run skillforge-vm log` | 查看版本历史 |
+| `uv run skillforge-vm diff` | 查看默认基线与当前版本的变化结论 |
+| `uv run skillforge-vm tag tested` | 给当前内容打锚点，并设为默认基线 |
+| `uv run skillforge-vm diff --base tested --head "@"` | 比较指定锚点与当前版本 |
+| `uv run skillforge-vm snapshot --message "调整约束"` | 手动捕获一次快照，日常保存无需执行 |
+| `uv run skillforge-vm show tested` | 查看修订元数据 JSON，不是文件全文 |
+| `uv run skillforge-vm restore tested` | 预览清单并确认后恢复整个 Skill |
+| `uv run skillforge-vm undo` | 撤销最近一次恢复；再次执行会撤销上次撤销 |
+| `uv run skillforge-vm ops` | 查看操作日志 |
+
+存在多个工作区时，对业务命令指定工作区 ID，例如 `uv run skillforge-vm diff --ws "工作区ID"`。参数帮助可用 `uv run skillforge-vm diff --help` 等命令查看。
+
+### 一次完整流程
+
+```powershell
+# 将当前内容设为参考版本
+uv run skillforge-vm tag tested
+
+# 在编辑器修改并保存 SKILL.md，等待自动快照后查看
+uv run skillforge-vm status
+uv run skillforge-vm log
+uv run skillforge-vm diff
+
+# 如需回到参考版本：核对预览清单，再确认
+uv run skillforge-vm restore tested
+
+# 如需撤销刚才的恢复
+uv run skillforge-vm undo
+```
+
+`tested`、`stable` 只是自定义名字，不会自动运行测试。最近创建或移动的命名锚点成为默认基线，后续保存不移动它；没有基线时默认与空树比较全部纳管内容。
+
+## 4. 使用安装包（无需 Node）
+
+拿到 `.whl` 安装包后，先准备 Python 3.11+ 和 pipx，将下面路径替换为实际文件：
+
+```powershell
+pipx install "C:\Downloads\skillforge_vm-0.1.0-py3-none-any.whl"
+skillforge-vm start
+```
+
+保持服务运行，在另一个终端纳管目录：
+
+```powershell
+skillforge-vm init "D:\skills\example" --name example
+```
+
+安装包自带网页，**直接打开服务日志里的地址**（默认 `http://127.0.0.1:8756/`），不需要运行 npm。终端操作与第 3 节相同，去掉命令开头的 `uv run` 即可。安装依赖需要网络或已有缓存，wheel 不包含全部依赖。
+
+## 5. 数据与恢复须知
+
+- 快照和历史保存在服务日志显示的数据目录。复制 Skill 文件夹不包含历史，保留历史也要保留数据目录。
+- 自定义数据目录时，服务和每条业务命令都使用同一全局参数，放在子命令前，例如 `uv run skillforge-vm --data-root "D:\SkillForgeData" start` 和 `uv run skillforge-vm --data-root "D:\SkillForgeData" status`。数据目录必须在 Skill 目录之外。
+- ZIP 需先解压，再纳管解压目录；更新 ZIP 不会自动同步。编辑器里未保存的内容不会进入快照。
+- 恢复前保存编辑器缓冲区并暂停编辑。恢复会回写整个 Skill，需核对清单并确认；取消不会回写。恢复后的新编辑会阻止盲目撤销。
+- 恢复中断时执行 `status`，按显示的计划 ID 运行 `restore --resume "计划ID"`。不支持部分文件恢复、文件/目录类型转换或撤销锚点。
+
+当前可用于 Windows 本机试用。完整快照正文浏览、ZIP 同步、测试证据关联、行为执行和自动评分尚未实现；跨平台及完整交付验证边界见下方记录。
+
+## 更多文档
+
+- [详细用户指南](docs/用户使用指南.md)
+- [当前交付检查与验证范围](docs/交付检查记录.md)
+- [在 Codex 中人工测试 Skill 版本](docs/Codex%20Skill%20版本测试指南.md)
+- [设计文档](docs/SkillForge%20版本管理器设计文档.md) · [实现契约与验收](docs/SkillForge%20版本管理器实现契约与验收.md) · [分工计划](docs/SkillForge%20版本管理器分工与交付计划.md)
+- 参与开发前阅读 [AGENTS.md](AGENTS.md)；前端规则见 [frontend/AGENTS.md](frontend/AGENTS.md)。
