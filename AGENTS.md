@@ -269,3 +269,14 @@ document names are relative to `docs/`. New project documents still belong in `d
 - 待决/未验证项明确到具体模块与原因；未完成部分不写成已完成。
 
 交付说明保持简短：**改了什么及原因 → 验证结果 → 限制/待决项**。按上面「提交节奏」提交本次模块改动（只提交、不自动 push），不拿“以后补测试/以后再对齐文档”作为完成条件。
+
+<!-- change-handoff:start -->
+## Change handoff
+
+For coding tasks in this project, read and follow the change-handoff skill at
+`C:/Users/ls/.codex/skills/change-handoff/SKILL.md`.
+Maintain one lightweight local notes file per task under .change-handoff/tasks/.
+Record material decisions and actual verification; checkpoint successful commits.
+Keep ordinary recording unobtrusive. Push does not generate another document.
+Generate or refresh a review report only when the user requests review or a report.
+<!-- change-handoff:end -->

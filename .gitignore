@@ -34,3 +34,4 @@ Thumbs.db
 
 # Personal agent overrides
 /AGENTS.LOCAL.md
+/.change-handoff/
