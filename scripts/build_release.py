@@ -57,6 +57,7 @@ def main() -> None:
                 archive.getinfo(prefix + asset.lstrip("/"))
         target = output / wheel.name
         shutil.copy2(wheel, target)
+        shutil.copy2(root / "start-web.cmd", output / "start-web.cmd")
         print(f"已验证 wheel 中的网页入口及资源：{target}")
         print("注意：网页能力取决于 B 线实现；打包成功不代表语义报告或撤销已完成。")
 

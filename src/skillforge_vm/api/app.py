@@ -34,6 +34,23 @@ def _default_version() -> str:
     return os.environ.get("SKILLFORGE_VM_TOOL_VERSION", "0.1.0")
 
 
+def _web_assets() -> Path | None:
+    module = Path(__file__).resolve()
+    packaged = module.parents[1] / "web_assets"
+    if (packaged / "index.html").is_file():
+        return packaged
+    project = module.parents[3]
+    source_module = project / "src" / "skillforge_vm" / "api" / "app.py"
+    built = project / "frontend" / "dist"
+    if (
+        source_module.resolve() == module
+        and (project / "pyproject.toml").is_file()
+        and (built / "index.html").is_file()
+    ):
+        return built
+    return None
+
+
 def create_app(
     manager: WorkspaceManager | None = None,
     *,
@@ -187,7 +204,7 @@ def create_app(
         return EventSourceResponse(_generate())
 
     app.include_router(router)
-    assets = Path(__file__).resolve().parents[1] / "web_assets"
-    if (assets / "index.html").is_file():
+    assets = _web_assets()
+    if assets is not None:
         app.mount("/", StaticFiles(directory=assets, html=True), name="web")
     return app

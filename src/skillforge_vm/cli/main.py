@@ -114,6 +114,21 @@ def start(
 
 
 @app.command()
+def gui(
+    ctx: typer.Context,
+    no_browser: Annotated[bool, typer.Option("--no-browser", hidden=True)] = False,
+) -> None:
+    """启动或复用本机服务，并打开可视化界面。"""
+    from .gui import launch
+
+    try:
+        base = launch(ctx.obj["data_root"], open_browser=not no_browser)
+    except (CliError, OSError) as exc:
+        _fail(str(exc))
+    typer.echo(f"可视化界面：{base}/")
+
+
+@app.command()
 def init(
     ctx: typer.Context,
     path: Annotated[Path, typer.Argument(help="要纳管的 Skill 目录")],

@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import site
 import subprocess
 import tempfile
@@ -95,6 +96,19 @@ def main() -> None:
                         return response.read()
 
                 assert json.loads(get("/api/health"))["ok"]
+                service_pid = json.loads(runtime.read_text(encoding="utf-8"))["pid"]
+                launched = subprocess.run(
+                    [str(python), "-m", "skillforge_vm.cli.main", "gui", "--no-browser"],
+                    cwd=root,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    check=True,
+                    timeout=15,
+                )
+                assert base in launched.stdout
+                assert json.loads(runtime.read_text(encoding="utf-8"))["pid"] == service_pid
                 html = get("/").decode("utf-8")
                 for asset in re.findall(r'(?:src|href)="(/assets/[^"?#]+)', html):
                     assert get(asset)
@@ -159,12 +173,20 @@ def main() -> None:
                     status = json.loads(get(f"/api/workspaces/{ws}/status"))["data"]
                     assert status["head_seq"] == seq and status["pending_restore"] is None
                 print(
-                    "PASS: wheel 安装、无 Node PATH、网页资源、CLI、自动快照、"
+                    "PASS: wheel 安装、无 Node PATH、GUI 启动复用、网页资源、CLI、自动快照、"
                     "语义报告、锚点、恢复与撤销"
                 )
                 if args.reuse_installed_deps:
                     print("LIMITATION: 复用现有依赖，干净环境依赖安装未验证")
             finally:
+                # Windows venv python.exe may be a trampoline with a separate child PID.
+                if runtime.is_file():
+                    actual_pid = json.loads(runtime.read_text(encoding="utf-8"))["pid"]
+                    if actual_pid != service.pid:
+                        try:
+                            os.kill(actual_pid, signal.SIGTERM)
+                        except ProcessLookupError:
+                            pass
                 if service.poll() is None:
                     service.kill()
                 service.wait(timeout=10)
