@@ -71,3 +71,40 @@ def test_lower_layer_does_not_claim_semantic_computed(tmp_path) -> None:
     assert report["layers"]["semantic"]["status"] == "not_requested"
     assert report["overview"]["changes"] is None
     assert report["overview"]["risk"] == "unknown"
+
+
+def test_repeated_unchanged_rules_do_not_become_modifications(tmp_path) -> None:
+    text = "# Rules\nMust keep data local.\nMust keep data local.\n"
+    service, ws, file = _service(tmp_path, text)
+    service.set_ref(ws, "tested")
+    file.write_text(text + "\n", encoding="utf-8")
+    service.snapshot(ws)
+    report = service.diff(ws)
+    assert report["overview"]["files"] == 1
+    assert report["layers"]["semantic"]["units"] == []
+    assert report["overview"]["risk"] == "low"
+
+
+def test_empty_json_and_invalid_base_both_degrade_to_text(tmp_path) -> None:
+    service, ws, file = _service(tmp_path, "# Role\nYou are a writer.\n")
+    config = file.parent / "config.json"
+    config.write_text('{"role":"writer"}', encoding="utf-8")
+    service.set_ref(ws, "tested")
+    config.write_bytes(b"")
+    service.snapshot(ws)
+    empty = service.diff(ws)
+    assert empty["degraded"] == [
+        {
+            "path": "config.json",
+            "requested_layer": "L3",
+            "available_layer": "L1",
+            "reason_code": "parse_failed",
+        }
+    ]
+    assert empty["layers"]["text"]["hunks"]
+    service.set_ref(ws, "empty")
+    config.write_text('{"role":"reviewer"}', encoding="utf-8")
+    service.snapshot(ws)
+    repaired = service.diff(ws)
+    assert repaired["degraded"] == empty["degraded"]
+    assert repaired["overview"]["risk"] == "unknown"

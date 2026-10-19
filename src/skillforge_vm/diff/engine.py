@@ -18,7 +18,7 @@ from ..semantics import ChangeOp, SemanticChange, SemanticElement, SourceSpan
 from ..semantics.extractor import extract_semantic_elements
 from .models import DiffResult, Layer
 
-ALGORITHM_REVISION = "diff-rules-1"
+ALGORITHM_REVISION = "diff-rules-2"
 REPORT_SCHEMA_VERSION = "1"
 
 
@@ -171,12 +171,24 @@ def _semantic_diff(
     changes: list[SemanticChange] = []
     reviews: list[dict[str, Any]] = []
 
+    # Match unchanged occurrences before fuzzy pairing, including repeated rules.
+    exact: dict[tuple[Any, ...], list[int]] = defaultdict(list)
+    for index, item in enumerate(after):
+        exact[(item.kind, _span_key(item.span))].append(index)
+    for index, item in enumerate(before):
+        matches = exact.get((item.kind, _span_key(item.span)), [])
+        if matches:
+            unmatched_before.remove(index)
+            unmatched_after.remove(matches.pop(0))
+
     left_keys = Counter((item.kind, item.normalized) for item in before)
     right_keys = Counter((item.kind, item.normalized) for item in after)
     right_lookup: dict[tuple[Any, ...], list[int]] = defaultdict(list)
     for index, item in enumerate(after):
         right_lookup[(item.kind, item.normalized)].append(index)
     for left_index, item in enumerate(before):
+        if left_index not in unmatched_before:
+            continue
         key = (item.kind, item.normalized)
         if left_keys[key] != 1 or right_keys[key] != 1:
             continue
@@ -201,7 +213,11 @@ def _semantic_diff(
         if left_index not in unmatched_before or right_index not in unmatched_after:
             continue
         left, right = before[left_index], after[right_index]
-        if left.span.path == right.span.path and ratio >= 0.3:
+        if left.normalized == right.normalized:
+            changes.append(_change(ChangeOp.MOVE, left, right))
+            unmatched_before.remove(left_index)
+            unmatched_after.remove(right_index)
+        elif left.span.path == right.span.path and ratio >= 0.3:
             changes.append(_change(ChangeOp.MODIFY, left, right))
             unmatched_before.remove(left_index)
             unmatched_after.remove(right_index)
@@ -321,7 +337,9 @@ class DiffEngine:
             )
             if layer.depth < 2:
                 continue
-            reason = _validate_structure(display_path, after_data or before_data)
+            reason = (
+                _validate_structure(before_path, before_data) if before_path is not None else None
+            ) or (_validate_structure(after_path, after_data) if after_path is not None else None)
             if reason:
                 degraded.append(
                     {
