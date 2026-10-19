@@ -108,3 +108,16 @@ def test_empty_json_and_invalid_base_both_degrade_to_text(tmp_path) -> None:
     repaired = service.diff(ws)
     assert repaired["degraded"] == empty["degraded"]
     assert repaired["overview"]["risk"] == "unknown"
+
+
+def test_json_role_change_is_not_reported_as_zero_semantic_changes(tmp_path) -> None:
+    service, ws, file = _service(tmp_path, "# Role\nYou are a writer.\n")
+    config = file.parent / "config.json"
+    config.write_text('{"role":"writer"}', encoding="utf-8")
+    service.set_ref(ws, "tested")
+    config.write_text('{"role":"reviewer"}', encoding="utf-8")
+    service.snapshot(ws)
+    report = service.diff(ws)
+    [unit] = report["layers"]["semantic"]["units"]
+    assert unit["kind"] == "role"
+    assert unit["op"] == "modify"

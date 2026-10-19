@@ -230,6 +230,8 @@ MVP 历史页使用稳定分页列表，显示版本时间、触发原因、锚�
 
 ### 5.1 语义质量样例口径
 
+- AC-07/10 JSON 回归补充：`role` 从 writer 改 reviewer 必须产生 role.modify；嵌套示例中的 tools 不单独抽成工具要求；BOM/中文/emoji 的 span 必须逐字节回指原文；排版不改规范值，workflow 数组调序必须改变规范值。对应 `tests/test_semantics.py` 与 `tests/test_diff_report.py`，不修改原有冻结样例。
+
 - AC-10/11 回归补充：重复相同约束后仅追加空行，语义 units 必须为空且不产生虚假 medium 风险；有效 JSON 清空、空 JSON 修成有效内容时，实际存在的任一侧无法解析均按该文件降至 L1，文字证据仍保留且总风险为 unknown。样例追加到 `tests/test_diff_report.py`，算法版本变化不得复用旧错误结果。
 
 - B 在算法实现前先提交冻结的合成基准集，覆盖八类单元的增删改移、否定词、workflow/数组顺序、示例与正文边界、CRLF/BOM/中文/emoji/Markdown 硬换行、坏 YAML、非 UTF-8、2 MiB 上限、模糊移动与纯格式变化。后续可追加脱敏真实 Skill 样例，但不得修改既有预期迎合实现。

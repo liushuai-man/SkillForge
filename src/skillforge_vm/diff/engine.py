@@ -18,7 +18,7 @@ from ..semantics import ChangeOp, SemanticChange, SemanticElement, SourceSpan
 from ..semantics.extractor import extract_semantic_elements
 from .models import DiffResult, Layer
 
-ALGORITHM_REVISION = "diff-rules-2"
+ALGORITHM_REVISION = "diff-rules-3"
 REPORT_SCHEMA_VERSION = "1"
 
 

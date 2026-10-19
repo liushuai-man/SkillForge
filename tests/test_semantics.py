@@ -52,3 +52,29 @@ def test_markdown_hard_break_is_preserved_in_evidence() -> None:
     elements = extract_semantic_elements("SKILL.md", source)
     assert elements[0].span.text.endswith("检查")
     assert source[elements[0].span.start_byte : elements[0].span.end_byte].decode() == "必须先检查"
+
+
+def test_json_keys_classify_values_and_preserve_byte_evidence() -> None:
+    source = (
+        '\ufeff{"agent":{"role":"写作😀", "constraints":["保留数据"], '
+        '"examples":{"tools":"不要执行"}}, "workflow":["读取","写入"]}'
+    ).encode()
+    elements = extract_semantic_elements("config.json", source)
+    assert [item.kind for item in elements] == [
+        SemanticKind.ROLE,
+        SemanticKind.CONSTRAINT,
+        SemanticKind.EXAMPLE,
+        SemanticKind.WORKFLOW,
+    ]
+    for item in elements:
+        assert source[item.span.start_byte : item.span.end_byte].decode() == item.span.text
+    assert elements[0].section == "agent.role"
+    assert '"写作😀"' in elements[0].span.text
+
+
+def test_json_array_order_is_semantic_and_formatting_is_not() -> None:
+    [before] = extract_semantic_elements("config.json", b'{"workflow":["read","write"]}')
+    [formatted] = extract_semantic_elements("config.json", b'{ "workflow" : [ "read", "write" ] }')
+    [reordered] = extract_semantic_elements("config.json", b'{"workflow":["write","read"]}')
+    assert before.normalized == formatted.normalized
+    assert before.normalized != reordered.normalized

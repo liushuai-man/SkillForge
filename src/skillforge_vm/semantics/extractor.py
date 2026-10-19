@@ -5,8 +5,13 @@
 
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
+from pathlib import PurePosixPath
+
+import tree_sitter_json
+from tree_sitter import Language, Node, Parser
 
 from .models import SemanticElement, SemanticKind, SourceSpan
 
@@ -103,9 +108,60 @@ def _inline_kind(text: str, section: SemanticKind | None) -> tuple[SemanticKind,
     return None
 
 
+def _json_elements(path: str, data: bytes) -> list[SemanticElement]:
+    offset = 3 if data.startswith(b"\xef\xbb\xbf") else 0
+    root = Parser(Language(tree_sitter_json.language())).parse(data[offset:]).root_node
+    if root.has_error:
+        raise ValueError("JSON syntax cannot be parsed")
+    elements: list[SemanticElement] = []
+
+    def raw(node: Node) -> bytes:
+        return data[offset + node.start_byte : offset + node.end_byte]
+
+    def visit(node: Node, keys: tuple[str, ...]) -> None:
+        if node.type == "pair":
+            key, value = node.child_by_field_name("key"), node.child_by_field_name("value")
+            assert key is not None and value is not None
+            name = json.loads(raw(key))
+            key_path = (*keys, name)
+            kind = _section_kind(name.replace("_", " "))
+            if kind is not None or value.type not in {"object", "array"}:
+                kind = kind or SemanticKind.PARAMETER
+                start, end = offset + node.start_byte, offset + node.end_byte
+                elements.append(
+                    SemanticElement(
+                        kind=kind,
+                        span=SourceSpan(
+                            path=path,
+                            start_byte=start,
+                            end_byte=end,
+                            text=data[start:end].decode("utf-8"),
+                        ),
+                        rule_id=f"semantic.{kind.value}.json_key.v1",
+                        normalized=json.dumps(
+                            [key_path, json.loads(raw(value))],
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                        section=".".join(key_path),
+                    )
+                )
+            else:
+                visit(value, key_path)
+        else:
+            for index, child in enumerate(node.named_children):
+                visit(child, (*keys, str(index)) if node.type == "array" else keys)
+
+    visit(root, ())
+    return elements
+
+
 def extract_semantic_elements(path: str, data: bytes) -> list[SemanticElement]:
     """从原始 UTF-8 bytes 提取语义事实，并保留精确 byte span。"""
     data.decode("utf-8")  # 严格验证；降级决策由 M-05 统一处理
+    if PurePosixPath(path).suffix.casefold() == ".json":
+        return _json_elements(path, data)
     elements: list[SemanticElement] = []
     offset = 0
     section_title: str | None = None
