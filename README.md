@@ -13,6 +13,12 @@ Agent Skill 的版本管理与版本对比内核（SkillForge 版本管理器 / 
 
 设计文档描述目标能力，不代表功能已经实现。开始开发前先读 [AGENTS.md](AGENTS.md)，按任务查阅对应契约和验收用例；MVP 范围以设计文档 §8.1 为准。
 
+## Agent 协作规则
+
+共享规则维护在根目录 [AGENTS.md](AGENTS.md)，前端局部规则见 [frontend/AGENTS.md](frontend/AGENTS.md)；从根目录修改前端时也需先读局部规则。个人覆盖使用可选的 `AGENTS.LOCAL.md`（已忽略，不提交）。领域术语维护在根目录 [CONTEXT.md](CONTEXT.md)。
+
+仓库当前没有随项目提交的 `SKILL.md` 技能；用户环境中的技能（如 `project-agent-init`）不是项目依赖，也不保证其他开发者已安装。规则文件提供行为指引，不能代替测试或 CI 的执行结果。
+
 ## 开发环境
 
 本仓库使用 [uv](https://docs.astral.sh/uv/) 管理 Python 3.12 与后端依赖。
@@ -20,9 +26,17 @@ Agent Skill 的版本管理与版本对比内核（SkillForge 版本管理器 / 
 ```bash
 uv sync                 # 创建 .venv 并安装后端依赖
 uv run pytest           # 运行测试
+uv run ruff check .      # 后端静态检查
+uv run ruff format <本次修改的Python文件>  # 只格式化指定文件
 
-cd frontend && npm install && npm run dev   # 前端开发
+cd frontend
+npm ci                  # 按 package-lock.json 安装依赖
+npm run dev             # 前端开发
+npm run typecheck       # TypeScript 检查
+npm run build           # 类型检查并构建前端
 ```
+
+命令入口和配置已按 `pyproject.toml`、`frontend/package.json` 与锁文件核对；实际执行是否通过，以每次任务的验证记录为准。前端没有单独的 test、lint 或 format 脚本。
 
 ## 快速开始（本机服务 + CLI）
 

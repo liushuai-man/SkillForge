@@ -136,6 +136,11 @@ SkillForge/
 
 ## 命令清单
 
+Read [frontend/AGENTS.md](frontend/AGENTS.md) before editing the frontend from a
+root session. Keep shared rules here; nested guides contain only local additions.
+Use `uv.lock` for Python and `frontend/package-lock.json` for npm dependencies.
+Do not update lockfiles or install dependencies just to edit instructions.
+
 ```bash
 uv sync                      # 创建 .venv 并安装后端依赖
 uv run pytest                # 后端测试
@@ -143,7 +148,7 @@ uv run ruff check .          # 静态检查
 uv run ruff format <files>   # 仅格式化本次修改文件，避免无关差异
 
 cd frontend
-npm install
+npm ci                       # Install from frontend/package-lock.json
 npm run dev                  # 前端开发（/api 代理到 127.0.0.1:8756）
 npm run build                # 构建到 frontend/dist（打包时内置产物）
 ```
@@ -152,17 +157,20 @@ npm run build                # 构建到 frontend/dist（打包时内置产物�
 
 ## 文档组织
 
-`docs/` 下：
+Document locations (relative to the repository root):
 
 | 文件 | 内容 | 何时更新 |
 |---|---|---|
-| `CONTEXT.md` | 项目领域术语及明确排除的同义词；不记录实现细节 | 领域词义或边界发生变化 |
+| `CONTEXT.md` (repository root) | 项目领域术语及明确排除的同义词；不记录实现细节 | 领域词义或边界发生变化 |
 | `docs/adr/*.md` | 难以逆转、存在真实权衡且代码本身无法解释的决策 | 相关架构/状态/边界决策确定或被替代 |
 | `SkillForge 版本管理器设计文档.md` | 产品定义 / 需求 / 模块 / 架构 / 技术栈 / 关键决策 | 产品、技术契约变化 |
 | `SkillForge 版本管理器分工与交付计划.md` | 两人分工、每周任务、双方验收标准 | 范围 / 排期变化 |
 | `SkillForge 版本管理器实现契约与验收.md` | 模块交接、事务恢复、报告/错误/事件契约、AC 用例、决策记录 | 交接模型 / 状态 / 失败语义 / 验收变化 |
 | `Codex Skill 版本测试指南.md` | 在 Codex 中人工复测不同 Skill 版本的操作流程、交付限制与记录模板 | Codex Skill 发现方式、人工版本复测流程或跨机器交付边界变化 |
 | `A线 Week4 交付与验收记录.md` / `A线性能实测.json` | A 线提交、安装产物、实测数据与未验证边界 | A 线交付验收结果变化 |
+
+Except for `CONTEXT.md` and the explicitly prefixed `docs/adr/*.md`, the table's
+document names are relative to `docs/`. New project documents still belong in `docs/`.
 
 设计文档内部章节定位：§2.4 NFR、§3.2 模块明细、§4.3 对象存储、§4.5 数据模型、§4.6 接口设计、§5.1 选型。
 
@@ -245,7 +253,10 @@ npm run build                # 构建到 frontend/dist（打包时内置产物�
 ### 提交节奏
 
 - **每完成一个模块的改动、且验证通过后，立即提交**，不要攒批；一次提交只做一件事（一个模块 / 一个主题）。
-- 提交前保持可编译、可验证：`uv run ruff check .` 与 `uv run pytest` 通过；涉及前端行为时另跑 `npm run build`。
+- Before committing code, pass `uv run ruff check .` and `uv run pytest`; also run
+  `npm run build` for frontend behavior changes. For documentation-only commits,
+  check links, command definitions, terminology, contract scope and the diff as
+  described above; do not require a build or full test suite for prose alone.
 - 沿用 `feat(core):` / `fix:` / `docs:` 等前缀 + 中文简述；精确 `git add <文件>`，禁用 `git add -A` / `git add .`。
 - 未通过验证、含调试产物、或漏改关联文档的改动不提交；本次的失败/待决项写进提交说明。
 - 只提交，不自动 `push`。
