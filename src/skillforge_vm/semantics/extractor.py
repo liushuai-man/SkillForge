@@ -118,7 +118,23 @@ def _json_elements(path: str, data: bytes) -> list[SemanticElement]:
     def raw(node: Node) -> bytes:
         return data[offset + node.start_byte : offset + node.end_byte]
 
-    def visit(node: Node, keys: tuple[str, ...]) -> None:
+    def canonical(node: Node) -> object:
+        if node.type == "object":
+            pairs = []
+            for pair in node.named_children:
+                key, value = pair.child_by_field_name("key"), pair.child_by_field_name("value")
+                assert key is not None and value is not None
+                pairs.append([json.loads(raw(key)), canonical(value)])
+            return ["object", sorted(pairs, key=lambda pair: pair[0])]
+        if node.type == "array":
+            return ["array", [canonical(child) for child in node.named_children]]
+        if node.type == "string":
+            return ["string", json.loads(raw(node))]
+        # Preserve numeric tokens without float rounding or overflow. Whitespace
+        # is outside these tokens; array order and duplicate keys remain visible.
+        return [node.type, raw(node).decode("utf-8")]
+
+    def visit(node: Node, keys: tuple[str, ...], context: Node | None = None) -> None:
         if node.type == "pair":
             key, value = node.child_by_field_name("key"), node.child_by_field_name("value")
             assert key is not None and value is not None
@@ -127,7 +143,8 @@ def _json_elements(path: str, data: bytes) -> list[SemanticElement]:
             kind = _section_kind(name.replace("_", " "))
             if kind is not None or value.type not in {"object", "array"}:
                 kind = kind or SemanticKind.PARAMETER
-                start, end = offset + node.start_byte, offset + node.end_byte
+                evidence = context if context is not None else node
+                start, end = offset + evidence.start_byte, offset + evidence.end_byte
                 elements.append(
                     SemanticElement(
                         kind=kind,
@@ -139,7 +156,7 @@ def _json_elements(path: str, data: bytes) -> list[SemanticElement]:
                         ),
                         rule_id=f"semantic.{kind.value}.json_key.v1",
                         normalized=json.dumps(
-                            [key_path, json.loads(raw(value))],
+                            [key_path, canonical(value)],
                             ensure_ascii=False,
                             sort_keys=True,
                             separators=(",", ":"),
@@ -148,10 +165,10 @@ def _json_elements(path: str, data: bytes) -> list[SemanticElement]:
                     )
                 )
             else:
-                visit(value, key_path)
+                visit(value, key_path, context if context is not None else node)
         else:
             for index, child in enumerate(node.named_children):
-                visit(child, (*keys, str(index)) if node.type == "array" else keys)
+                visit(child, (*keys, str(index)) if node.type == "array" else keys, context)
 
     visit(root, ())
     return elements

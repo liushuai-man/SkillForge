@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from skillforge_vm.api.service import WorkspaceService
 from skillforge_vm.db.connection import connect
 from skillforge_vm.workspace.manager import WorkspaceManager
@@ -134,3 +136,34 @@ def test_json_role_change_is_not_reported_as_zero_semantic_changes(tmp_path) -> 
     [unit] = report["layers"]["semantic"]["units"]
     assert unit["kind"] == "role"
     assert unit["op"] == "modify"
+
+
+@pytest.mark.parametrize("bad", ['{"timeout":NaN}', '{"timeout":Infinity}'])
+def test_nonstandard_json_constants_degrade_without_failing_report(tmp_path, bad) -> None:
+    service, ws, file = _service(tmp_path, "# Role\nYou are a writer.\n")
+    (file.parent / "config.json").write_text(bad, encoding="utf-8")
+    service.snapshot(ws)
+    report = service.diff(ws)
+    assert report["degraded"][0]["reason_code"] == "parse_failed"
+    assert report["layers"]["text"]["hunks"]
+
+
+@pytest.mark.parametrize(
+    "before,after",
+    [
+        ('{"timeout":1e999}', '{"timeout":2e999}'),
+        ('{"timeout":0.12345678901234567890}', '{"timeout":0.12345678901234567891}'),
+        ('{"a":{"timeout":30}}', '{"b":{"timeout":30}}'),
+    ],
+)
+def test_json_numeric_and_parent_path_changes_are_not_lost(tmp_path, before, after) -> None:
+    service, ws, file = _service(tmp_path, "# Role\nYou are a writer.\n")
+    config = file.parent / "config.json"
+    config.write_text(before, encoding="utf-8")
+    service.set_ref(ws, "tested")
+    config.write_text(after, encoding="utf-8")
+    service.snapshot(ws)
+    report = service.diff(ws)
+    [unit] = report["layers"]["semantic"]["units"]
+    assert unit["op"] == "modify"
+    assert unit["before"]["text"] != unit["after"]["text"]

@@ -230,6 +230,9 @@ MVP 历史页使用稳定分页列表，显示版本时间、触发原因、锚�
 
 ### 5.1 语义质量样例口径
 
+- JSON 无损回归：NaN/Infinity 只使该文件 parse_failed，不阻断整份报告；`1e999→2e999`、高精度小数末位变化与同字节位置的父键改名必须产生带不同原文证据的修改，不能因 float 舍入或位置精确匹配漏报。
+
+
 - AC-12/13 摘要验收：L1 报告的语义计数为 null，模板显示“未计算”且不得显示零语义变化；L3 的风险枚举仍为 medium 等英文值，用户摘要显示“中风险”等中文。模板变化形成新算法身份，不改写历史缓存。
 
 - AC-07/10 JSON 回归补充：`role` 从 writer 改 reviewer 必须产生 role.modify；嵌套示例中的 tools 不单独抽成工具要求；BOM/中文/emoji 的 span 必须逐字节回指原文；排版不改规范值，workflow 数组调序必须改变规范值。对应 `tests/test_semantics.py` 与 `tests/test_diff_report.py`，不修改原有冻结样例。

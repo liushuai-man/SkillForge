@@ -18,7 +18,7 @@ from ..semantics import ChangeOp, SemanticChange, SemanticElement, SourceSpan
 from ..semantics.extractor import extract_semantic_elements
 from .models import DiffResult, Layer
 
-ALGORITHM_REVISION = "diff-rules-4"
+ALGORITHM_REVISION = "diff-rules-5"
 REPORT_SCHEMA_VERSION = "1"
 
 
@@ -129,11 +129,15 @@ def _text_hunks(
     return hunks
 
 
+def _reject_json_constant(value: str) -> None:
+    raise ValueError(f"Invalid JSON constant: {value}")
+
+
 def _validate_structure(path: str, data: bytes) -> str | None:
     suffix = PurePosixPath(path).suffix.casefold()
     try:
         if suffix == ".json":
-            json.loads(data.decode("utf-8-sig"))
+            json.loads(data.decode("utf-8-sig"), parse_constant=_reject_json_constant)
         elif suffix in {".yaml", ".yml"}:
             yaml.safe_load(data.decode("utf-8-sig"))
         elif suffix not in {".md", ".markdown"}:
@@ -174,9 +178,9 @@ def _semantic_diff(
     # Match unchanged occurrences before fuzzy pairing, including repeated rules.
     exact: dict[tuple[Any, ...], list[int]] = defaultdict(list)
     for index, item in enumerate(after):
-        exact[(item.kind, _span_key(item.span))].append(index)
+        exact[(item.kind, item.normalized, _span_key(item.span))].append(index)
     for index, item in enumerate(before):
-        matches = exact.get((item.kind, _span_key(item.span)), [])
+        matches = exact.get((item.kind, item.normalized, _span_key(item.span)), [])
         if matches:
             unmatched_before.remove(index)
             unmatched_after.remove(matches.pop(0))
