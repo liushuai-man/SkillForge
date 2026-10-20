@@ -79,7 +79,7 @@ def test_diff_prints_report_summary(monkeypatch) -> None:
         return report
 
     monkeypatch.setattr(cli.VmClient, "get", get)
-    result = CliRunner().invoke(app, ["diff"])
+    result = CliRunner().invoke(app, ["diff", "--summary"])
     assert result.exit_code == 0, result.output
     assert "检测到 1 处变化" in result.output
     assert "RPT-test" in result.output

@@ -17,6 +17,7 @@ import typer
 from ..core.config import Settings
 from ..workspace.manager import WorkspaceManager
 from .client import CliError, VmClient, remove_runtime, resolve_base_url, write_runtime
+from .report_view import format_report
 
 app = typer.Typer(add_completion=False, help="SkillForge 版本管理器（服务客户端）")
 
@@ -274,6 +275,7 @@ def diff(
     base: Annotated[str | None, typer.Option(help="基线修订/锚点；省略使用 Baseline")] = None,
     head: Annotated[str | None, typer.Option(help="目标修订/锚点；省略使用当前修订")] = None,
     layer: Annotated[str, typer.Option(help="L0 / L1 / L2 / L3")] = "L3",
+    summary: Annotated[bool, typer.Option("--summary", help="仅显示结论与计数")] = False,
     ws: WsOpt = None,
 ) -> None:
     """生成可复现的版本对比报告。"""
@@ -285,17 +287,7 @@ def diff(
         )
     except CliError as exc:
         _fail(str(exc))
-    typer.echo(report["summary"])
-    overview = report["overview"]
-    typer.echo(
-        f"文件 {overview['files']} · 语义变化 {overview['changes']} · "
-        f"分组 {overview['clusters']} · 风险 {overview['risk']}"
-    )
-    for cluster in report["clusters"]:
-        typer.echo(f"- {cluster['label']}（{len(cluster['units'])}）")
-    if overview["needs_review"]:
-        typer.echo(f"待确认：{overview['needs_review']} 项")
-    typer.echo(f"报告：{report['report_id']}")
+    typer.echo(format_report(report, summary_only=summary))
 
 
 def _confirm_restore(client: VmClient, ws: str, plan: dict, *, yes: bool) -> None:

@@ -181,6 +181,11 @@ class ExperienceCheck:
         require(report["head"]["rev"] == self.revision("last")["rev_id"], "报告不是当前修订")
         require(report["layers"]["semantic"]["status"] == "computed", "L3 没有完成")
         require(report["overview"]["changes"] >= 1, "语义变化未被识别")
+        require(report["report_id"] in output, "终端与 API 的报告 ID 不一致")
+        require("UTF-8 bytes [" in output, "终端没有展示原文证据位置")
+        require("- 用中文回答，并提供一个例子。" in output, "终端缺少修改前原文")
+        require("+ 回答不要超过三段。" in output, "终端缺少修改后原文")
+        require("UTF-8 bytes" not in self.cli("diff", "--summary"), "简短模式未生效")
 
     def restart(self) -> None:
         previous = self.get(f"/workspaces/{self.ws}/revisions")
