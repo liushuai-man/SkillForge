@@ -36,9 +36,6 @@ ERROR_STATUS: dict[str, int] = {
     "revision_not_found": 404,
     "snapshot_unstable": 409,
     "workspace_busy": 409,
-    "restore_conflict": 409,
-    "restore_pending": 409,
-    "restore_plan_not_found": 404,
     "operation_failed": 500,
 }
 
@@ -84,7 +81,9 @@ def register_error_handlers(app: FastAPI) -> None:
     async def _validation(_request: Request, exc: RequestValidationError) -> JSONResponse:
         return JSONResponse(
             status_code=422,
-            content=envelope_error("invalid_request", "请求参数校验失败", detail=str(exc.errors())),
+            content=envelope_error(
+                "invalid_request", "请求参数校验失败", detail=str(exc.errors())
+            ),
         )
 
     @app.exception_handler(Exception)

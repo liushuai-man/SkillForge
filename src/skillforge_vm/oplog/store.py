@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from datetime import UTC, datetime
 from typing import Any
@@ -90,31 +89,3 @@ class OpStore:
             "SELECT COUNT(*) AS n FROM op WHERE ws_id = ?", (ws_id,)
         ).fetchone()
         return int(row["n"])
-
-    def get(self, ws_id: str, op_id: str) -> Op | None:
-        row = self._conn.execute(
-            "SELECT * FROM op WHERE ws_id = ? AND op_id = ?", (ws_id, op_id)
-        ).fetchone()
-        return _row_to_op(row) if row else None
-
-    def latest_restore(self, ws_id: str, *, completed: bool = False) -> Op | None:
-        kinds = (OpKind.RESTORE_DONE,) if completed else (OpKind.RESTORE_BEGIN, OpKind.RESTORE_DONE)
-        marks = ",".join("?" for _ in kinds)
-        row = self._conn.execute(
-            f"SELECT * FROM op WHERE ws_id = ? AND kind IN ({marks}) ORDER BY rowid DESC LIMIT 1",
-            (ws_id, *kinds),
-        ).fetchone()
-        return _row_to_op(row) if row else None
-
-    def pending_restore(self, ws_id: str) -> str | None:
-        last = self.latest_restore(ws_id)
-        if last and last.kind == OpKind.RESTORE_BEGIN:
-            return json.loads(last.payload_json)["plan_id"]
-        return None
-
-    def restore_done(self, ws_id: str, plan_id: str) -> Op | None:
-        row = self._conn.execute(
-            "SELECT * FROM op WHERE ws_id = ? AND parent_op_id = ? AND kind = ?",
-            (ws_id, plan_id, OpKind.RESTORE_DONE),
-        ).fetchone()
-        return _row_to_op(row) if row else None

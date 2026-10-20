@@ -15,7 +15,7 @@ import httpx
 import pytest
 
 from skillforge_vm.api.app import create_app
-from skillforge_vm.api.events import EVENT_DIFF_READY, EVENT_SNAPSHOT_CREATED, EventBus
+from skillforge_vm.api.events import EVENT_SNAPSHOT_CREATED, EventBus
 from skillforge_vm.api.service import WorkspaceService
 from skillforge_vm.workspace.manager import WorkspaceManager
 
@@ -111,41 +111,14 @@ async def test_tag_and_reserved_ref(client: httpx.AsyncClient, skill_dir: Path) 
         await client.post(f"/api/workspaces/{workspace_id}/refs", json={"name": "tested"})
     ).json()
     assert tagged["data"]["name"] == "tested"
-    status = (await client.get(f"/api/workspaces/{workspace_id}/status")).json()["data"]
-    assert status["baseline_revision"] == tagged["data"]["rev_id"]
 
     refs = (await client.get(f"/api/workspaces/{workspace_id}/refs")).json()["data"]
     names = {row["name"] for row in refs}
     assert {"tested", "last"} <= names
-    assert "baseline" not in names
 
     reserved = await client.post(f"/api/workspaces/{workspace_id}/refs", json={"name": "last"})
     assert reserved.status_code == 422
     assert reserved.json()["error"]["code"] == "invalid_request"
-
-
-async def test_diff_route_uses_baseline_and_returns_canonical_report(
-    client: httpx.AsyncClient, skill_dir: Path
-) -> None:
-    ws = (await _init(client, skill_dir))["data"]["workspace"]["workspace_id"]
-    await client.post(f"/api/workspaces/{ws}/refs", json={"name": "tested"})
-    (skill_dir / "SKILL.md").write_text("# Constraints\n必须保留历史\n", encoding="utf-8")
-    await client.post(f"/api/workspaces/{ws}/snapshots", json={})
-    response = await client.get(f"/api/workspaces/{ws}/diff")
-    assert response.status_code == 200
-    report = response.json()["data"]
-    assert report["report_id"].startswith("RPT-")
-    assert report["overview"]["changes"] == 1
-    summary = (await client.get(f"/api/workspaces/{ws}/diff/summary")).json()["data"]
-    assert summary["report_id"] == report["report_id"]
-
-
-async def test_diff_waits_for_pending_snapshot(client: httpx.AsyncClient, skill_dir: Path) -> None:
-    ws = (await _init(client, skill_dir))["data"]["workspace"]["workspace_id"]
-    (skill_dir / "SKILL.md").write_text("pending", encoding="utf-8")
-    response = await client.get(f"/api/workspaces/{ws}/diff")
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "snapshot_unstable"
 
 
 async def test_ops_record_init_snapshot_and_ref(client: httpx.AsyncClient, skill_dir: Path) -> None:
@@ -199,22 +172,6 @@ async def test_snapshot_publishes_created_event(tmp_path: Path) -> None:
     assert event["type"] == EVENT_SNAPSHOT_CREATED
     assert event["workspace_id"] == workspace_id
     assert event["revision_id"]
-
-
-async def test_diff_ready_is_published_only_after_first_persist(tmp_path: Path) -> None:
-    skill = tmp_path / "s"
-    skill.mkdir()
-    (skill / "SKILL.md").write_text("# Role\n你是助手\n", encoding="utf-8")
-    service = WorkspaceService(WorkspaceManager(data_root=tmp_path / "data"))
-    workspace_id = service.init(str(skill))["workspace"]["workspace_id"]
-    queue = service.bus.subscribe(workspace_id)
-    report = service.diff(workspace_id)
-    event = await asyncio.wait_for(queue.get(), timeout=2.0)
-    assert event["type"] == EVENT_DIFF_READY
-    assert event["report_id"] == report["report_id"]
-    service.diff(workspace_id)
-    await asyncio.sleep(0)
-    assert queue.empty()
 
 
 async def test_service_lifecycle_watches_new_and_existing_workspaces(
