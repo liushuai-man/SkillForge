@@ -80,3 +80,15 @@ class OperationFailedError(SkillForgeVMError):
     """未归类异常：说明失败步骤，不编造底层原因（500）。"""
 
     code = "operation_failed"
+
+
+class RestoreConflictError(SkillForgeVMError):
+    code = "restore_conflict"
+
+
+class RestorePendingError(SkillForgeVMError):
+    code = "restore_pending"
+
+
+class RestorePlanNotFoundError(SkillForgeVMError):
+    code = "restore_plan_not_found"

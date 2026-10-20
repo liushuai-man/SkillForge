@@ -22,6 +22,9 @@ class OpKind(StrEnum):
     WORKSPACE_INIT = "workspace.init"
     SNAPSHOT = "snapshot"
     REF_SET = "ref.set"
+    RESTORE_PLAN = "restore.plan"
+    RESTORE_BEGIN = "restore.begin"
+    RESTORE_DONE = "restore.done"
 
 
 def new_op_id() -> str:

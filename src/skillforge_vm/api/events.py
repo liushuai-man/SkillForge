@@ -10,8 +10,9 @@ import asyncio
 import threading
 from typing import Any
 
-# 事件类型：MVP 落地 snapshot/created；diff/ready、parse/degraded 待 M-05 接入后补。
 EVENT_SNAPSHOT_CREATED = "snapshot/created"
+EVENT_DIFF_READY = "diff/ready"
+EVENT_PARSE_DEGRADED = "parse/degraded"
 
 
 class EventBus:
