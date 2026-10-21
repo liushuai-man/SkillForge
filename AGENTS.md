@@ -70,7 +70,7 @@
 - 发现同级文档互相冲突时，先定位具体条款并修正权威定义及引用；尚未决定的产品/数据契约列入设计 §2.7（负责人、影响、关闭条件），相关实现不靠猜测开工。独立部分继续推进。
 - 用户明确授权已覆盖的文档完善、跨模块工作不重复询问；未获覆盖的数据破坏、依赖、公共协议或产品边界变化才按下方“先问”处理。不要把内部函数命名等局部可逆选择升级成产品决策。
 - 每个输出区分**目标设计 / 已实现 / 已验证 / 未验证 / 待决**。不得把占位模块、示例 JSON、测试命令未执行或缓存命中称为功能完成。
-- 文件恢复按用户已批准的 TBD-08 及实现契约 §2.4 执行；TBD-09 已按 ADR-0001/0003 关闭，不得臆造第二套状态协议。
+- 本项目当前文件恢复边界见 TBD-08，状态持久化见 TBD-09；未关闭前不得实现 Skill 文件回写或臆造第二套状态协议。
 
 ---
 
@@ -136,13 +136,6 @@ SkillForge/
 
 ## 命令清单
 
-开发环境统一入口（项目根 PowerShell）：`.\dev.cmd`，同时准备并启动 API 和 Vite；Ctrl+C 停止本次进程。测试/验收生成的 Skill 统一放仓库同级 `Mytest/skillForge-testskills`（本机 `D:\mycode\Mytest\skillForge-testskills`）的独立子目录；可用 `SKILLFORGE_TEST_ROOT` 覆盖，不把真实 Skill 放入自动清理的测试目录。现有用户/Codex 的正式 Skill 安装位置不受此测试规则影响。
-
-Read [frontend/AGENTS.md](frontend/AGENTS.md) before editing the frontend from a
-root session. Keep shared rules here; nested guides contain only local additions.
-Use `uv.lock` for Python and `frontend/package-lock.json` for npm dependencies.
-Do not update lockfiles or install dependencies just to edit instructions.
-
 ```bash
 uv sync                      # 创建 .venv 并安装后端依赖
 uv run pytest                # 后端测试
@@ -150,8 +143,8 @@ uv run ruff check .          # 静态检查
 uv run ruff format <files>   # 仅格式化本次修改文件，避免无关差异
 
 cd frontend
-npm ci                       # Install from frontend/package-lock.json
-npm run dev                  # 单独前端开发；dev.cmd 自动传入实际 API 地址
+npm install
+npm run dev                  # 前端开发（/api 代理到 127.0.0.1:8756）
 npm run build                # 构建到 frontend/dist（打包时内置产物）
 ```
 
@@ -159,22 +152,14 @@ npm run build                # 构建到 frontend/dist（打包时内置产物�
 
 ## 文档组织
 
-Document locations (relative to the repository root):
+`docs/` 下：
 
 | 文件 | 内容 | 何时更新 |
 |---|---|---|
-| `CONTEXT.md` (repository root) | 项目领域术语及明确排除的同义词；不记录实现细节 | 领域词义或边界发生变化 |
-| `docs/adr/*.md` | 难以逆转、存在真实权衡且代码本身无法解释的决策 | 相关架构/状态/边界决策确定或被替代 |
 | `SkillForge 版本管理器设计文档.md` | 产品定义 / 需求 / 模块 / 架构 / 技术栈 / 关键决策 | 产品、技术契约变化 |
 | `SkillForge 版本管理器分工与交付计划.md` | 两人分工、每周任务、双方验收标准 | 范围 / 排期变化 |
 | `SkillForge 版本管理器实现契约与验收.md` | 模块交接、事务恢复、报告/错误/事件契约、AC 用例、决策记录 | 交接模型 / 状态 / 失败语义 / 验收变化 |
-| `Codex Skill 版本测试指南.md` | 在 Codex 中人工复测不同 Skill 版本的操作流程、交付限制与记录模板 | Codex Skill 发现方式、人工版本复测流程或跨机器交付边界变化 |
-| `用户使用指南.md` | 安装启动、Web/CLI 操作、自动快照、基线、恢复及完整示例 | 用户操作流程或功能限制变化 |
-| `交付检查记录.md` | 当前 MVP 交付检查、实际证据及未验证边界；issue 4/5 覆盖情况 | 交付验证结果或剩余问题变化 |
 | `A线 Week4 交付与验收记录.md` / `A线性能实测.json` | A 线提交、安装产物、实测数据与未验证边界 | A 线交付验收结果变化 |
-
-Except for `CONTEXT.md` and the explicitly prefixed `docs/adr/*.md`, the table's
-document names are relative to `docs/`. New project documents still belong in `docs/`.
 
 设计文档内部章节定位：§2.4 NFR、§3.2 模块明细、§4.3 对象存储、§4.5 数据模型、§4.6 接口设计、§5.1 选型。
 
@@ -200,7 +185,7 @@ document names are relative to `docs/`. New project documents still belong in `d
 
 - `git push --force` 到 main
 - 跳 hook（`--no-verify`）
-- **未经用户发起并确认恢复而向 Skill 目录写文件**。2026-10-13 用户已批准 TBD-08：自动纳管仍只读；显式恢复指定修订/撤销最近一次恢复可受控回写，须先保存当前状态、展示变更清单并确认，遵循实现契约 §2.4；不得写忽略路径或链接目标。
+- **往用户 Skill 目录写文件**（FR-01.3 / NFR-12；TBD-08 关闭前，undo/restore 也不能绕过此禁令）
 - 跨层直读数据库，或让上层绕过公开接口（NFR-11）
 - 引入 Redis / Celery / 消息队列 / 外部数据库 / 向量库（NFR-09 / §5.3）
 - 把用户 Skill 内容**默认**发往远端（NFR-07：断网可用，数据不出本机）
@@ -257,10 +242,7 @@ document names are relative to `docs/`. New project documents still belong in `d
 ### 提交节奏
 
 - **每完成一个模块的改动、且验证通过后，立即提交**，不要攒批；一次提交只做一件事（一个模块 / 一个主题）。
-- Before committing code, pass `uv run ruff check .` and `uv run pytest`; also run
-  `npm run build` for frontend behavior changes. For documentation-only commits,
-  check links, command definitions, terminology, contract scope and the diff as
-  described above; do not require a build or full test suite for prose alone.
+- 提交前保持可编译、可验证：`uv run ruff check .` 与 `uv run pytest` 通过；涉及前端行为时另跑 `npm run build`。
 - 沿用 `feat(core):` / `fix:` / `docs:` 等前缀 + 中文简述；精确 `git add <文件>`，禁用 `git add -A` / `git add .`。
 - 未通过验证、含调试产物、或漏改关联文档的改动不提交；本次的失败/待决项写进提交说明。
 - 只提交，不自动 `push`。
@@ -273,14 +255,3 @@ document names are relative to `docs/`. New project documents still belong in `d
 - 待决/未验证项明确到具体模块与原因；未完成部分不写成已完成。
 
 交付说明保持简短：**改了什么及原因 → 验证结果 → 限制/待决项**。按上面「提交节奏」提交本次模块改动（只提交、不自动 push），不拿“以后补测试/以后再对齐文档”作为完成条件。
-
-<!-- change-handoff:start -->
-## Change handoff
-
-For coding tasks in this project, read and follow the change-handoff skill at
-`C:/Users/ls/.codex/skills/change-handoff/SKILL.md`.
-Maintain one lightweight local notes file per task under .change-handoff/tasks/.
-Record material decisions and actual verification; checkpoint successful commits.
-Keep ordinary recording unobtrusive. Push does not generate another document.
-Generate or refresh a review report only when the user requests review or a report.
-<!-- change-handoff:end -->

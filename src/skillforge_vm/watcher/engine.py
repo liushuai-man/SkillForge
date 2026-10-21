@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from ..core.errors import RestoreConflictError, RestorePendingError, SnapshotUnstableError
+from ..core.errors import SnapshotUnstableError
 from ..core.types import (
     CHANGE_IDLE_MINUTES,
     SCAN_ATTEMPTS,
@@ -26,7 +26,6 @@ from ..db.connection import connect, transaction
 from ..objectstore.index import ObjectIndex
 from ..objectstore.store import DirectoryWriteResult, ObjectStore
 from ..oplog.models import OpKind
-from ..oplog.restore_models import RestoreCommit
 from ..oplog.store import OpStore
 from ..revision.identity import new_change_id, revision_meta_payload
 from ..revision.models import Revision
@@ -78,7 +77,6 @@ class SnapshotEngine:
         trigger: SnapshotTrigger = SnapshotTrigger.WATCH,
         source: SnapshotSource = SnapshotSource.EDIT,
         message: str | None = None,
-        restore: RestoreCommit | None = None,
     ) -> SnapshotResult:
         """串行捕获一次快照；无变化时返回当前修订且不写任何业务元数据。
 
@@ -86,7 +84,7 @@ class SnapshotEngine:
         """
         ws_id = self._handle.workspace_id
         with _lock_for(ws_id):
-            return self._capture(ws_id, trigger, source, message, restore)
+            return self._capture(ws_id, trigger, source, message)
 
     def end_active_change(self) -> None:
         """显式边界（打锚点 / 撤销）后，下次内容变化另起 Change（§7.2）。"""
@@ -104,29 +102,17 @@ class SnapshotEngine:
         trigger: SnapshotTrigger,
         source: SnapshotSource,
         message: str | None,
-        restore: RestoreCommit | None,
     ) -> SnapshotResult:
         root = Path(self._handle.config.root_path)
         ignore = self._handle.config.ignore.ignores
         store = ObjectStore(self._handle.paths.objects_dir)
+        written = self._stable_write(store, root, ignore)
+
         conn = connect(self._handle.paths.db_file)
         try:
-            pending = OpStore(conn).pending_restore(ws_id)
-            if pending and (restore is None or restore.plan_id != pending):
-                raise RestorePendingError(
-                    "有未完成恢复，普通快照已暂停，请确认后继续", detail=pending
-                )
-            if restore is not None and restore.plan_id != pending:
-                raise RestoreConflictError("恢复提交没有对应的进行中计划")
-            written = self._stable_write(store, root, ignore)
-            if restore and written.root.oid != restore.target_tree:
-                raise RestoreConflictError("文件恢复结果与目标不一致，保留待恢复状态")
             revisions = RevisionStore(conn)
             head = revisions.head(ws_id)
             if head is not None and head.root_tree_oid == written.root.oid:
-                if restore:
-                    with transaction(conn):
-                        self._finish_restore(conn, ws_id, restore, head.rev_id)
                 return SnapshotResult(revision=head, created=False)
 
             seq = 1 if head is None else head.seq + 1
@@ -179,23 +165,12 @@ class SnapshotEngine:
                         "message": message,
                     },
                 )
-                if restore:
-                    self._finish_restore(conn, ws_id, restore, revision.rev_id)
 
             self._active_change_id = change_id
             self._last_commit_at = self._clock()
             return SnapshotResult(revision=revision, created=True)
         finally:
             conn.close()
-
-    @staticmethod
-    def _finish_restore(conn, ws_id: str, restore: RestoreCommit, rev_id: str) -> None:
-        OpStore(conn).record(
-            ws_id=ws_id,
-            kind=OpKind.RESTORE_DONE,
-            parent_op_id=restore.plan_id,
-            payload={**restore.model_dump(exclude={"target_tree"}), "after_rev": rev_id},
-        )
 
     def _stable_write(
         self,

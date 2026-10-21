@@ -1,8 +1,8 @@
 """M-10 接口层：FastAPI 应用工厂与路由表（设计 §4.6 / 契约 §4）。
 
-只注册**已有真实实现**的路由。range-diff / reports export / behavior-diff 为后续能力，
-不注册占位成功响应。undo / restore 按契约 §2.4
-先预览、显式确认，恢复计划支持中断续作。
+只注册**已有真实实现**的路由。diff / range-diff / reports / behavior-diff 依赖 M-05/M-08（B 线）
+或预留契约，尚未实现，故不注册，避免出现「占位成功响应」。undo / restore 受 TBD-08/TBD-09
+阻塞（见契约 §2.3），同样不注册。
 """
 
 from __future__ import annotations
@@ -20,35 +20,12 @@ from starlette.staticfiles import StaticFiles
 
 from ..workspace.manager import WorkspaceManager
 from .envelope import RequestIdMiddleware, envelope_ok, register_error_handlers
-from .schemas import (
-    InitRequest,
-    RefRequest,
-    RestoreApplyRequest,
-    RestorePreviewRequest,
-    SnapshotRequest,
-)
+from .schemas import InitRequest, RefRequest, SnapshotRequest
 from .service import WorkspaceService
 
 
 def _default_version() -> str:
     return os.environ.get("SKILLFORGE_VM_TOOL_VERSION", "0.1.0")
-
-
-def _web_assets() -> Path | None:
-    module = Path(__file__).resolve()
-    packaged = module.parents[1] / "web_assets"
-    if (packaged / "index.html").is_file():
-        return packaged
-    project = module.parents[3]
-    source_module = project / "src" / "skillforge_vm" / "api" / "app.py"
-    built = project / "frontend" / "dist"
-    if (
-        source_module.resolve() == module
-        and (project / "pyproject.toml").is_file()
-        and (built / "index.html").is_file()
-    ):
-        return built
-    return None
 
 
 def create_app(
@@ -109,22 +86,6 @@ def create_app(
 
     # ---- 修订 / 变更 ----
 
-    @router.post("/workspaces/{ws_id}/restore/preview")
-    def preview_restore(ws_id: str, payload: RestorePreviewRequest) -> dict[str, Any]:
-        return envelope_ok(service.preview_restore(ws_id, payload.rev))
-
-    @router.post("/workspaces/{ws_id}/undo/preview")
-    def preview_undo(ws_id: str) -> dict[str, Any]:
-        return envelope_ok(service.preview_undo(ws_id))
-
-    @router.get("/workspaces/{ws_id}/restore/plans/{plan_id}")
-    def get_restore_plan(ws_id: str, plan_id: str) -> dict[str, Any]:
-        return envelope_ok(service.get_restore_plan(ws_id, plan_id))
-
-    @router.post("/workspaces/{ws_id}/restore/plans/{plan_id}/apply")
-    def apply_restore(ws_id: str, plan_id: str, payload: RestoreApplyRequest) -> dict[str, Any]:
-        return envelope_ok(service.apply_restore(ws_id, plan_id, confirm=payload.confirm))
-
     @router.get("/workspaces/{ws_id}/revisions")
     def list_revisions(
         ws_id: str,
@@ -140,25 +101,6 @@ def create_app(
     @router.get("/workspaces/{ws_id}/changes")
     def list_changes(ws_id: str) -> dict[str, Any]:
         return envelope_ok(service.list_changes(ws_id))
-
-    # ---- 对比 ----
-
-    @router.get("/workspaces/{ws_id}/diff")
-    def diff(
-        ws_id: str,
-        base: str | None = Query(default=None),
-        head: str | None = Query(default=None),
-        layer: str = Query(default="L3"),
-    ) -> dict[str, Any]:
-        return envelope_ok(service.diff(ws_id, base=base, head=head, layer=layer))
-
-    @router.get("/workspaces/{ws_id}/diff/summary")
-    def diff_summary(
-        ws_id: str,
-        base: str | None = Query(default=None),
-        head: str | None = Query(default=None),
-    ) -> dict[str, Any]:
-        return envelope_ok(service.diff_summary(ws_id, base=base, head=head))
 
     # ---- 引用 / 锚点 ----
 
@@ -204,7 +146,7 @@ def create_app(
         return EventSourceResponse(_generate())
 
     app.include_router(router)
-    assets = _web_assets()
-    if assets is not None:
+    assets = Path(__file__).resolve().parents[1] / "web_assets"
+    if (assets / "index.html").is_file():
         app.mount("/", StaticFiles(directory=assets, html=True), name="web")
     return app

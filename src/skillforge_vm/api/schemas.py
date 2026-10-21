@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, StrictBool
+from pydantic import BaseModel
 
 
 class InitRequest(BaseModel):
@@ -17,11 +17,3 @@ class SnapshotRequest(BaseModel):
 class RefRequest(BaseModel):
     name: str
     rev: str | None = None
-
-
-class RestorePreviewRequest(BaseModel):
-    rev: str
-
-
-class RestoreApplyRequest(BaseModel):
-    confirm: StrictBool
