@@ -76,6 +76,7 @@ export default function App() {
   const [summaries, setSummaries] = useState<Record<string, string>>({})
   const summaryCache = useRef<Record<string, string>>({})
   const activeWorkspace = useRef('')
+  const selectionClosed = useRef(false)
   const reportRequest = useRef(0)
   const revisionRequest = useRef(0)
   const workspaceRequest = useRef(0)
@@ -119,19 +120,20 @@ export default function App() {
       const rows = await api<Workspace[]>('/workspaces')
       if (request !== workspaceRequest.current) return
       setWorkspaces(rows); setError('')
-      setWorkspaceId((current) => rows.some((row) => row.workspace_id === current) ? current : rows[0]?.workspace_id ?? '')
+      setWorkspaceId((current) => rows.some((row) => row.workspace_id === current) ? current : selectionClosed.current ? '' : rows[0]?.workspace_id ?? '')
     } catch (reason) { if (request === workspaceRequest.current) setError(reason instanceof Error ? reason.message : '工作区读取失败') }
     finally { if (request === workspaceRequest.current) setWorkspacesLoading(false) }
   }, [])
   useEffect(() => { void loadWorkspaces(); return () => { ++workspaceRequest.current } }, [loadWorkspaces])
   useEffect(() => {
-    if (!workspaceId) return
     activeWorkspace.current = workspaceId
     if (window.innerWidth <= 700) setSidebarOpen(false)
     comparison.current = { layer: 'L3' }
     setSelectedFile(''); setFileFilter(''); setWorkspaceStatusError('')
     summaryCache.current = {}
     setRevisions([]); setRefs([]); setSummaries({}); setHistoryUpper(null); setHistoryPage(0); setSelected([]); setReport(null); setAnchor(''); setAnchorRev(''); setBaseSpec(''); setHeadSpec(''); setCompareLayer('L3'); setPendingRestore(null); setNotice(''); setError(''); setStreamError('')
+    setPlan(null)
+    if (!workspaceId) { setLoading(false); return }
     const refresh = () => { const { base, head, layer } = comparison.current; void loadRevisions(workspaceId); void loadReport(workspaceId, base, head, layer); setRefreshToken((value) => value + 1) }
     refresh()
     const stream = new EventSource(`/api/workspaces/${workspaceId}/events`)
@@ -191,6 +193,17 @@ export default function App() {
 
   const createWorkspace = async (path: string, name: string) => {
     if (actionInFlight.current || plan) return false
+    const normalized = (value: string) => {
+      const cleaned = value.trim().replace(/\\/g, '/').replace(/\/+$/, '')
+      return /^[a-z]:\//i.test(cleaned) || cleaned.startsWith('//') ? cleaned.toLowerCase() : cleaned
+    }
+    const existing = workspaces.find((row) => normalized(row.root_path) === normalized(path))
+    if (existing) {
+      selectionClosed.current = false
+      activeWorkspace.current = existing.workspace_id
+      setWorkspaceId(existing.workspace_id); setError(''); setNotice('')
+      return true
+    }
     actionInFlight.current = true; setBusy(true); setError(''); setNotice('')
     try {
       const result = await api<{ workspace: Workspace; file_count: number }>('/workspaces', { method: 'POST', body: JSON.stringify({ path, name: name || null }) })
@@ -202,6 +215,14 @@ export default function App() {
       return true
     } catch (reason) { setError(reason instanceof Error ? reason.message : '纳管失败'); return false }
     finally { setBusy(false); actionInFlight.current = false; setWorkspacesLoading(false) }
+  }
+
+  const closeWorkspace = () => {
+    if (locked) return
+    selectionClosed.current = true
+    activeWorkspace.current = ''
+    ++reportRequest.current; ++revisionRequest.current
+    setWorkspaceId(''); setView('semantic'); setPanelOpen(false); setSidebarView('explorer'); setSidebarOpen(true)
   }
 
   const compareSelected = () => {
@@ -250,7 +271,7 @@ export default function App() {
   return <div className="app-shell" style={{ '--sidebar-width': `${actualSidebarWidth}px`, '--panel-height': `${actualPanelHeight}px` } as CSSProperties}>
     <header className="titlebar">
       <div className="titlebar-brand"><button className="icon-button" title="切换侧栏" aria-label="切换侧栏" aria-expanded={sidebarOpen} onClick={() => setSidebarOpen(!sidebarOpen)}><Icon name="layout-sidebar-left" /></button><strong>SkillForge</strong><span className="app-edition">版本管理器</span></div>
-      <label className="workspace-picker"><Icon name="folder-opened" /><span className="sr-only">工作区</span><select disabled={locked || !workspaces.length} value={workspaceId} onChange={(event) => { activeWorkspace.current = event.target.value; setWorkspaceId(event.target.value) }}>{!workspaces.length && <option value="">打开一个 Skill 目录</option>}{workspaces.map((item) => <option key={item.workspace_id} value={item.workspace_id}>{item.name}</option>)}</select></label>
+      <div className="workspace-picker"><Icon name="folder-opened" /><select aria-label="工作区" disabled={locked || !workspaces.length} value={workspaceId} onChange={(event) => { selectionClosed.current = !event.target.value; activeWorkspace.current = event.target.value; setWorkspaceId(event.target.value) }}><option value="">未打开文件夹</option>{workspaces.map((item) => <option key={item.workspace_id} value={item.workspace_id}>{item.name}</option>)}</select>{workspace && <button className="icon-button" title="关闭视图，后台继续记录" aria-label="关闭文件夹" disabled={locked} onClick={closeWorkspace}><Icon name="close" /></button>}</div>
       <div className="titlebar-actions"><label className="theme-picker"><span className="sr-only">界面主题</span><select value={theme} onChange={(event) => setTheme(event.target.value as Theme)}><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label><button className="icon-button" title="切换底部面板" aria-label="切换底部面板" aria-expanded={panelOpen} disabled={!workspace} onClick={() => setPanelOpen(!panelOpen)}><Icon name="layout-panel" /></button></div>
     </header>
     <div className={`workbench ${sidebarOpen ? '' : 'sidebar-collapsed'}`}>
@@ -268,7 +289,7 @@ export default function App() {
             {!workspacesLoading && <AddWorkspace busy={locked} empty={!workspaces.length} onCreate={createWorkspace} />}
             <div className="sidebar-section-label"><Icon name="chevron-down" /><strong>变更文件</strong><span className="count">{files.length}</span></div>
             <label className="file-filter"><Icon name="search" /><span className="sr-only">筛选变更文件</span><input value={fileFilter} onChange={(event) => setFileFilter(event.target.value)} placeholder="筛选变更文件" /></label>
-            <div className="file-list" aria-label="变更文件列表">{visibleFiles.map((file) => <button key={file.path} title={file.path} aria-current={activeFile === file.path && view === 'text' ? 'true' : undefined} className={`file-row ${activeFile === file.path && view === 'text' ? 'active' : ''}`} onClick={() => { setSelectedFile(file.path); setView('text'); if (viewport.width <= 700) setSidebarOpen(false) }}><Icon name="file-code" /><span className="file-name">{fileName(file.path)}<small>{file.path.includes('/') ? file.path.slice(0, file.path.lastIndexOf('/')) : ''}</small></span><span className={`file-operation ${file.op}`} aria-label={labels[file.op] ?? file.op}>{({ add: 'A', delete: 'D', modify: 'M', move: 'R' } as Record<string, string>)[file.op] ?? file.op}</span></button>)}{!visibleFiles.length && <p className="sidebar-hint">{fileFilter ? '没有匹配的变更文件。' : !workspace ? '纳管目录后，保存文件即可自动记录版本。' : loading ? '正在读取变化…' : '没有变更文件。'}</p>}</div>
+            <div className="file-list" aria-label="变更文件列表">{visibleFiles.map((file) => <button key={file.path} title={file.path} aria-current={activeFile === file.path && view === 'text' ? 'true' : undefined} className={`file-row ${activeFile === file.path && view === 'text' ? 'active' : ''}`} onClick={() => { setSelectedFile(file.path); setView('text'); if (viewport.width <= 700) setSidebarOpen(false) }}><Icon name="file-code" /><span className="file-name">{fileName(file.path)}<small>{file.path.includes('/') ? file.path.slice(0, file.path.lastIndexOf('/')) : ''}</small></span><span className={`file-operation ${file.op}`} aria-label={labels[file.op] ?? file.op}>{({ add: 'A', delete: 'D', modify: 'M', move: 'R' } as Record<string, string>)[file.op] ?? file.op}</span></button>)}{!visibleFiles.length && <p className="sidebar-hint">{fileFilter ? '没有匹配的变更文件。' : !workspace ? '未打开文件夹。' : loading ? '正在读取变化…' : '没有变更文件。'}</p>}</div>
             {workspace && <button className="sidebar-link" onClick={() => { setSidebarView('history'); setSidebarOpen(true) }}><Icon name="history" />浏览历史版本<span>{revisions.length}</span></button>}
           </>}
           {sidebarView === 'history' && <>
@@ -281,17 +302,17 @@ export default function App() {
             </>}{!workspace && <p className="sidebar-hint">先在资源管理器中添加 Skill 目录。</p>}
           </>}
           {sidebarView === 'compare' && <div className="sidebar-form"><p className="section-description">选择两个版本，或留空比较默认基线与当前内容。</p><form onSubmit={(event) => { event.preventDefault(); if (!locked && workspace) compare(baseSpec.trim() || undefined, headSpec.trim() || undefined, compareLayer) }}><label>比较基线<input disabled={locked || !workspace} list="revision-options" value={baseSpec} onChange={(event) => setBaseSpec(event.target.value)} placeholder="默认基线 / tested / @~1" /></label><label>目标版本<input disabled={locked || !workspace} list="revision-options" value={headSpec} onChange={(event) => setHeadSpec(event.target.value)} placeholder="当前 @ / 修订 ID" /></label><label>分析层级<select disabled={locked || !workspace} value={compareLayer} onChange={(event) => setCompareLayer(event.target.value)}><option value="L3">L3 · 语义结论</option><option value="L2">L2 · 结构分析</option><option value="L1">L1 · 文字差异</option><option value="L0">L0 · 文件变化</option></select></label><button type="submit" className="primary" disabled={locked || !workspace || loading}><Icon name="diff" />比较指定版本</button><button type="button" disabled={locked || !workspace || loading} onClick={() => compare()}>恢复默认比较</button></form><p className="sidebar-hint">支持锚点、修订 ID、@ 和 @~1。未计算的层级不会被视作无变化。</p></div>}
-          {sidebarView === 'settings' && <div className="sidebar-form"><h2>颜色主题</h2><p className="section-description">选择当前浏览器的外观。</p><div className="theme-options" aria-label="颜色主题">{([['light', '浅色'], ['dark', '深色'], ['system', '跟随系统']] as const).map(([key, label]) => <button key={key} aria-pressed={theme === key} onClick={() => setTheme(key)}><span className={`theme-preview ${key}`} /><span>{label}</span>{theme === key && <Icon name="check" />}</button>)}</div><p className="sidebar-hint">偏好保存在本机浏览器。跟随系统会自动响应系统配色变化。</p><h2>关于工作区</h2><p className="sidebar-hint">保存文件自动记录版本。文件在本机分析，纳管不会改写原文件。恢复和撤销需预览并确认。</p></div>}
+          {sidebarView === 'settings' && <div className="sidebar-form"><h2>颜色主题</h2><div className="theme-options" aria-label="颜色主题">{([['light', '浅色'], ['dark', '深色'], ['system', '跟随系统']] as const).map(([key, label]) => <button key={key} aria-pressed={theme === key} onClick={() => setTheme(key)}><span className={`theme-preview ${key}`} /><span>{label}</span>{theme === key && <Icon name="check" />}</button>)}</div><h2>关于工作区</h2><p className="sidebar-hint">保存文件自动记录版本。文件在本机分析，纳管不会改写原文件。恢复和撤销需预览并确认。</p></div>}
         </div>
       </aside>
       {sidebarOpen && <ResizeHandle axis="sidebar" value={actualSidebarWidth} min={220} max={maxSidebarWidth} onChange={setSidebarWidth} />}
       <main className="editor-group">
         <nav className="editor-tabs" aria-label="对比视图"><button className={view === 'semantic' ? 'active' : ''} aria-pressed={view === 'semantic'} onClick={() => setView('semantic')}><Icon name="source-control" /><span>语义结论</span>{files.length > 0 && <small>{files.length}</small>}</button><button className={view === 'text' ? 'active' : ''} aria-pressed={view === 'text'} onClick={() => setView('text')}><Icon name="diff" /><span>{activeFile ? fileName(activeFile) : '原文差异'}</span>{activeFile && <small>原文差异</small>}</button><div className="editor-tab-spacer" />{workspace && <button className="icon-button" disabled={locked || loading} title="刷新当前对比" aria-label="刷新当前对比" onClick={refreshCurrent}><Icon name="refresh" /></button>}</nav>
         <div className="breadcrumbs"><span>{workspace?.name ?? '未打开工作区'}</span><Icon name="chevron-right" /><span>{view === 'semantic' ? '变更概览' : activeFile || '所有变更文件'}</span>{report && <><span className="breadcrumb-spacer" /><span>{revisionLabel(report.base.rev)} <Icon name="arrow-right" /> {revisionLabel(report.head.rev)}</span><span className="layer-label">{report.layer}</span><button disabled={locked} onClick={() => { setSidebarView('compare'); setSidebarOpen(true) }}>更改比较</button></>}</div>
-        {workspace && <div className="editor-commandbar"><span className="commandbar-caption"><Icon name="circle-filled" />保存即快照</span><button disabled={locked || Boolean(pendingRestore) || Boolean(workspaceStatusError)} onClick={() => openPanel('snapshot')}>手动快照</button><button disabled={locked || Boolean(pendingRestore) || Boolean(workspaceStatusError)} onClick={() => openPanel('anchor')}><Icon name="bookmark" />创建锚点</button><button disabled={locked || Boolean(pendingRestore) || Boolean(workspaceStatusError)} onClick={() => void undo()}>撤销最近一次恢复</button><span className="breadcrumb-spacer" /><button onClick={() => openPanel('ops')}>操作日志</button></div>}
+        {workspace && <div className="editor-commandbar"><button disabled={locked || Boolean(pendingRestore) || Boolean(workspaceStatusError)} onClick={() => openPanel('snapshot')}>手动快照</button><button disabled={locked || Boolean(pendingRestore) || Boolean(workspaceStatusError)} onClick={() => openPanel('anchor')}><Icon name="bookmark" />创建锚点</button><button disabled={locked || Boolean(pendingRestore) || Boolean(workspaceStatusError)} onClick={() => void undo()}>撤销最近一次恢复</button><span className="breadcrumb-spacer" /><button onClick={() => openPanel('ops')}>操作日志</button></div>}
         <div className="editor-notifications" aria-live="polite">{storageWarning && <p className="notice">{storageWarning}</p>}{error && <p className="notice error" role="alert"><Icon name="warning" />{error}</p>}{notice && <p className="notice success" role="status"><Icon name="check" />{notice}<button className="icon-button" aria-label="关闭提示" onClick={() => setNotice('')}><Icon name="close" /></button></p>}{workspaceStatusError && <p className="notice error" role="alert">工作区状态读取失败：{workspaceStatusError}；恢复状态尚未确认。<button onClick={() => openPanel('snapshot')}>打开状态面板</button></p>}{streamError && <p className="notice"><Icon name="warning" />{streamError}</p>}{stale && report && <p className="notice">旧结果 · {loading ? '正在更新…' : '更新失败，请刷新重试。'}</p>}{pendingRestore && <p className="notice"><Icon name="warning" />恢复未完成，普通写入已暂停。<button disabled={locked} onClick={() => void resume(pendingRestore)}>查看并继续恢复</button></p>}</div>
         <div className="editor-scroll">
-          {!workspace && !workspacesLoading && <section className="welcome"><Icon name="files" /><h2>打开一个 Skill，开始记录变化</h2><p>保存即快照，比较即结论。</p><button className="primary" onClick={() => { setSidebarView('explorer'); setSidebarOpen(true) }}>添加 Skill 目录</button><small>从左侧输入本机目录路径。ZIP 请先解压。</small></section>}
+          {!workspace && !workspacesLoading && <section className="welcome"><Icon name="files" /><h2>打开一个 Skill，开始记录变化</h2><AddWorkspace compact busy={locked} empty onCreate={createWorkspace} /><small>选择文件夹开始。ZIP 请先解压。</small></section>}
           {workspacesLoading && <div className="empty" role="status">正在连接本机服务…</div>}
           {workspace && !report && loading && <div className="empty" role="status">正在生成对比报告…</div>}
           {report && (view === 'semantic' ? <div className="semantic-document"><div className="document-heading"><span className="document-kicker">变更概览</span><span className={`risk ${report.overview.risk}`}>{labels[report.overview.risk]}风险</span><h2>{report.summary}</h2><p>{report.base.rev === null ? '尚未建立基线，当前与空基线比较。' : '以下结论对应上方固定版本对。'}<button className="inline-link" onClick={() => setView('text')}>查看原文差异<Icon name="arrow-right" /></button></p></div><div className="metrics">{[[report.overview.files, '变更文件'], [report.overview.changes ?? '—', '语义变化'], [report.overview.clusters, '修改目的'], [report.overview.needs_review, '待确认']].map(([value, label]) => <div key={label}><b>{value}</b><span>{label}</span></div>)}</div><div className="risk-counts">{['high', 'medium', 'low', 'unknown'].map((level) => <span key={level} className={`risk ${level}`}>{labels[level]} {report.overview.risk_counts[level] ?? 0}</span>)}<small>静态规则分析 · 未接入行为对比</small></div><section className="clusters">

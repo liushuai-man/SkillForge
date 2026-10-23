@@ -84,14 +84,14 @@ export default function WorkspaceTools({ workspaceId, busy, refreshToken, onActi
         const result = await api<{ created: boolean; revision: { seq: number } }>(`/workspaces/${workspaceId}/snapshots`, { method: 'POST', body: JSON.stringify({ message: message.trim() || null }) })
         setMessage(''); setNotice(result.created ? `已记录版本 #${result.revision.seq}` : `内容未变化，仍为版本 #${result.revision.seq}，未创建空快照。`)
       })
-    }}><label className="wide">快照说明（可选）<input disabled={busy} value={message} onChange={(event) => setMessage(event.target.value)} placeholder="例如 调整输出格式" /></label><button className="primary" disabled={busy || Boolean(statusError) || Boolean(status?.pending_restore)} type="submit">记录快照</button><p className="form-hint">日常保存已自动记录，手动快照不是必经步骤。</p>{notice && <p role="status" className="wide">{notice}</p>}</form>}
+    }}><label className="wide">快照说明（可选）<input disabled={busy} value={message} onChange={(event) => setMessage(event.target.value)} placeholder="例如 调整输出格式" /></label><button className="primary" disabled={busy || Boolean(statusError) || Boolean(status?.pending_restore)} type="submit">记录快照</button>{notice && <p role="status" className="wide">{notice}</p>}</form>}
     {tab === 'revision' && <div className="tool-content">
       <form className="form-grid" onSubmit={(event) => { event.preventDefault(); void lookup() }}><label className="wide">修订或锚点<input value={rev} onChange={(event) => setRev(event.target.value)} placeholder="当前 @、tested、@~1 或修订 ID" /></label><button disabled={detailLoading || !rev.trim()} type="submit">查看修订详情</button><button type="button" disabled={busy || Boolean(statusError) || !rev.trim() || Boolean(status?.pending_restore)} onClick={() => void onRestore(rev.trim())}>预览恢复此版本</button></form>
       {detailError && <p className="notice error" role="alert">{detailError}</p>}
       {detail && <div className="revision-detail"><h3>版本 #{String(detail.seq)}</h3><p>{new Date(String(detail.ts)).toLocaleString()} · {String(detail.trigger)}</p><p>修订 ID：<code>{String(detail.rev_id)}</code></p><details><summary>完整修订元数据</summary><pre>{JSON.stringify(detail, null, 2)}</pre></details><p className="form-hint">这是修订元数据，不是快照文件正文。</p></div>}
       <form className="form-grid" onSubmit={(event) => { event.preventDefault(); if (resumeId.trim()) void onResume(resumeId.trim()) }}><label className="wide">恢复计划 ID<input value={resumeId} onChange={(event) => setResumeId(event.target.value)} placeholder="OP-…" /></label><button disabled={busy || !resumeId.trim()} type="submit">读取计划并预览续作</button></form>
     </div>}
-    {tab === 'ops' && <div className="tool-content"><div className="section-title"><p>新记录在前，每页 20 条；详情只读。</p><button disabled={opsLoading} onClick={() => setOpsTick((value) => value + 1)}>刷新日志</button></div>
+    {tab === 'ops' && <div className="tool-content"><div className="section-title"><button disabled={opsLoading} onClick={() => setOpsTick((value) => value + 1)}>刷新日志</button></div>
       {opsError && <p className="notice error" role="alert">日志读取失败：{opsError}；已有记录可能已过时。</p>}
       {opsLoading && <p role="status">正在读取操作日志…</p>}
       {!ops.length && !opsLoading && !opsError && <p>暂无操作记录。</p>}
