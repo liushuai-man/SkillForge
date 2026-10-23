@@ -12,6 +12,20 @@ import pytest
 from skillforge_vm.workspace.manager import WorkspaceHandle, WorkspaceManager
 
 
+def pytest_configure(config):
+    if config.option.basetemp is None:
+        import os
+        import uuid
+
+        root = Path(
+            os.environ.get(
+                "SKILLFORGE_TEST_ROOT",
+                str(Path(__file__).resolve().parents[2] / "Mytest/skillForge-testskills"),
+            )
+        )
+        config.option.basetemp = str(root / f"pytest-{uuid.uuid4().hex}")
+
+
 @pytest.fixture()
 def skill_dir(tmp_path: Path) -> Path:
     skill = tmp_path / "demo-skill"

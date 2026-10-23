@@ -6,19 +6,31 @@
 
 from __future__ import annotations
 
+import json
 import threading
 from datetime import UTC, datetime
 from functools import wraps
 from pathlib import Path
 from typing import Any
 
-from ..core.errors import InvalidRequestError, RefNotFoundError, RevisionNotFoundError
+from ..core.errors import (
+    InvalidRequestError,
+    RefNotFoundError,
+    RestoreConflictError,
+    RestorePendingError,
+    RevisionNotFoundError,
+)
 from ..core.locking import DataRootLock, SerialGate
 from ..core.types import ObjectType, SnapshotSource, SnapshotTrigger
 from ..db.connection import connect, transaction
+from ..diff import Layer
 from ..objectstore.objects import object_id
+from ..objectstore.store import ObjectStore
 from ..oplog.models import OpKind
+from ..oplog.restore import RestoreExecutor
+from ..oplog.restore_models import RestorePlan
 from ..oplog.store import OpStore
+from ..report import build_report
 from ..revision.models import Ref
 from ..revision.revset import resolve_revset
 from ..revision.store import RESERVED_REF_NAMES, RevisionStore
@@ -154,6 +166,7 @@ class WorkspaceService:
         conn = connect(handle.paths.db_file)
         try:
             head = RevisionStore(conn).head(ws_id)
+            pending_restore = OpStore(conn).pending_restore(ws_id)
         finally:
             conn.close()
         pending = self._has_pending(handle, head)
@@ -164,7 +177,19 @@ class WorkspaceService:
             "head_seq": None if head is None else head.seq,
             "change_id": None if head is None else head.change_id,
             "has_pending_changes": pending,
+            "pending_restore": pending_restore,
+            "baseline_revision": self._baseline(ws_id),
         }
+
+    def _baseline(self, ws_id: str) -> str | None:
+        conn = connect(self._handle(ws_id).paths.db_file)
+        try:
+            try:
+                return RevisionStore(conn).get_ref(ws_id, "baseline").rev_id
+            except RefNotFoundError:
+                return None
+        finally:
+            conn.close()
 
     def _has_pending(self, handle: WorkspaceHandle, head: Any) -> bool:
         """只读判定「当前原始树是否与已提交 head 相同」，不写任何对象/元数据。"""
@@ -223,6 +248,71 @@ class WorkspaceService:
 
     # ---- 修订 / 变更 ----
 
+    def _restore_executor(self, ws_id: str) -> RestoreExecutor:
+        handle = self._handle(ws_id)
+        return RestoreExecutor(handle, self._engine(handle))
+
+    @staticmethod
+    def _plan_data(plan: RestorePlan | None) -> dict[str, Any]:
+        if plan is None:
+            return {"no_change": True, "plan_id": None, "changes": []}
+        return {
+            "no_change": False,
+            "plan_id": plan.plan_id,
+            "before_rev": plan.before_rev,
+            "target_rev": plan.target_rev,
+            "action": plan.action,
+            "changes": plan.changes(),
+        }
+
+    @_serialized
+    def preview_restore(self, ws_id: str, rev: str) -> dict[str, Any]:
+        before = self.snapshot(ws_id)["revision"]["rev_id"]
+        target = self.get_revision(ws_id, rev)["rev_id"]
+        return self._plan_data(self._restore_executor(ws_id).preview(before, target))
+
+    @_serialized
+    def preview_undo(self, ws_id: str) -> dict[str, Any]:
+        before = self.snapshot(ws_id)["revision"]["rev_id"]
+        conn = connect(self._handle(ws_id).paths.db_file)
+        try:
+            done = OpStore(conn).latest_restore(ws_id, completed=True)
+        finally:
+            conn.close()
+        if done is None:
+            raise RestoreConflictError("没有可撤销的文件恢复")
+        payload = json.loads(done.payload_json)
+        if before != payload["after_rev"]:
+            raise RestoreConflictError("恢复后已有新改动，请显式选择历史修订进行 restore")
+        return self._plan_data(
+            self._restore_executor(ws_id).preview(
+                before, payload["before_rev"], action="undo_restore"
+            )
+        )
+
+    def get_restore_plan(self, ws_id: str, plan_id: str) -> dict[str, Any]:
+        return self._plan_data(self._restore_executor(ws_id).load(plan_id))
+
+    @_serialized
+    def apply_restore(self, ws_id: str, plan_id: str, *, confirm: bool) -> dict[str, Any]:
+        if confirm is not True:
+            raise InvalidRequestError("文件恢复必须显式确认 confirm=true")
+        result = self._restore_executor(ws_id).apply(plan_id)
+        if result.created:
+            self._publish(
+                {
+                    "type": EVENT_SNAPSHOT_CREATED,
+                    "workspace_id": ws_id,
+                    "revision_id": result.revision.rev_id,
+                    "seq": result.revision.seq,
+                }
+            )
+        return {
+            "plan_id": plan_id,
+            "created": result.created,
+            "revision": result.revision.model_dump(),
+        }
+
     def list_revisions(
         self, ws_id: str, *, limit: int | None = None, max_seq: int | None = None
     ) -> list[dict[str, Any]]:
@@ -271,6 +361,8 @@ class WorkspaceService:
             store = RevisionStore(conn)
             head = store.head(ws_id)
             current = None if head is None else head.rev_id
+            if pending := OpStore(conn).pending_restore(ws_id):
+                raise RestorePendingError("请先继续未完成的恢复", detail=pending)
             if rev_spec is None:
                 if head is None:
                     raise RevisionNotFoundError("工作区还没有任何修订，无法打锚点", detail=ws_id)
@@ -285,6 +377,7 @@ class WorkspaceService:
             ref = Ref(name=name, ws_id=ws_id, rev_id=target, updated_at=_now_iso())
             with transaction(conn):
                 store.set_ref(ref)  # 保留名（last）在此报 invalid_request
+                store.set_baseline(ws_id, target, ref.updated_at)
                 OpStore(conn).record(
                     ws_id=ws_id,
                     kind=OpKind.REF_SET,
@@ -301,7 +394,7 @@ class WorkspaceService:
         conn = connect(handle.paths.db_file)
         try:
             store = RevisionStore(conn)
-            refs = [ref.model_dump() for ref in store.list_refs(ws_id)]
+            refs = [ref.model_dump() for ref in store.list_refs(ws_id) if ref.name != "baseline"]
             head = store.head(ws_id)
         finally:
             conn.close()
@@ -316,6 +409,98 @@ class WorkspaceService:
                 }
             )
         return refs
+
+    def diff(
+        self,
+        ws_id: str,
+        *,
+        base: str | None = None,
+        head: str | None = None,
+        layer: str = "L3",
+    ) -> dict[str, Any]:
+        handle = self._handle(ws_id)
+        try:
+            requested = Layer(layer.upper())
+        except ValueError as exc:
+            raise InvalidRequestError(f"不支持的对比层级：{layer}") from exc
+        if base == "" or head == "":
+            raise InvalidRequestError("显式引用不能为空")
+        conn = connect(handle.paths.db_file)
+        try:
+            store = RevisionStore(conn)
+            current = store.head(ws_id)
+            if current is None:
+                raise RevisionNotFoundError("工作区还没有任何修订", detail=ws_id)
+            if head is None and self._has_pending(handle, current):
+                from ..core.errors import SnapshotUnstableError
+
+                raise SnapshotUnstableError("文件修改尚未形成快照，请等待后重试")
+            head_rev = store.get(
+                ws_id,
+                current.rev_id
+                if head is None
+                else resolve_revset(
+                    head,
+                    store=store,
+                    ws_id=ws_id,
+                    current=current.rev_id,
+                ),
+            )
+            base_id = (
+                self._baseline(ws_id)
+                if base is None
+                else resolve_revset(
+                    base,
+                    store=store,
+                    ws_id=ws_id,
+                    current=current.rev_id,
+                )
+            )
+            base_rev = None if base_id is None else store.get(ws_id, base_id)
+            report, created = build_report(
+                conn,
+                ObjectStore(handle.paths.objects_dir),
+                ws_id=ws_id,
+                base=base_rev,
+                head=head_rev,
+                base_files={} if base_rev is None else store.files(base_rev.rev_id),
+                head_files=store.files(head_rev.rev_id),
+                layer=requested,
+                analysis_config={
+                    "max_text_bytes": handle.config.ignore.max_text_bytes,
+                    "parsers": handle.config.parsers.model_dump(mode="json"),
+                    "semantic_unit_extensions": handle.config.semantic_unit_extensions,
+                },
+                max_text_bytes=handle.config.ignore.max_text_bytes,
+            )
+        finally:
+            conn.close()
+        if created:
+            self._publish(
+                {
+                    "type": "diff/ready",
+                    "workspace_id": ws_id,
+                    "report_id": report["report_id"],
+                    "revision_id": head_rev.rev_id,
+                }
+            )
+            for item in report["degraded"]:
+                self._publish(
+                    {
+                        "type": "parse/degraded",
+                        "workspace_id": ws_id,
+                        "report_id": report["report_id"],
+                        "path": item["path"],
+                        "reason_code": item["reason_code"],
+                    }
+                )
+        return report
+
+    def diff_summary(
+        self, ws_id: str, *, base: str | None = None, head: str | None = None
+    ) -> dict[str, Any]:
+        report = self.diff(ws_id, base=base, head=head)
+        return {key: report[key] for key in ("report_id", "base", "head", "summary", "overview")}
 
     # ---- 操作日志 ----
 

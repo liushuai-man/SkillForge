@@ -1,8 +1,7 @@
 """M-10 接口层：FastAPI 应用工厂与路由表（设计 §4.6 / 契约 §4）。
 
-只注册**已有真实实现**的路由。diff / range-diff / reports / behavior-diff 依赖 M-05/M-08（B 线）
-或预留契约，尚未实现，故不注册，避免出现「占位成功响应」。undo / restore 受 TBD-08/TBD-09
-阻塞（见契约 §2.3），同样不注册。
+注册已有的报告及受控恢复入口；恢复按契约 §2.4 先预览、再显式确认。
+range-diff、独立导出和行为执行仍为后续范围。
 """
 
 from __future__ import annotations
@@ -19,8 +18,15 @@ from sse_starlette.sse import EventSourceResponse
 from starlette.staticfiles import StaticFiles
 
 from ..workspace.manager import WorkspaceManager
+from .directory_picker import require_local_request, select_directory
 from .envelope import RequestIdMiddleware, envelope_ok, register_error_handlers
-from .schemas import InitRequest, RefRequest, SnapshotRequest
+from .schemas import (
+    InitRequest,
+    RefRequest,
+    RestoreApplyRequest,
+    RestorePreviewRequest,
+    SnapshotRequest,
+)
 from .service import WorkspaceService
 
 
@@ -62,6 +68,11 @@ def create_app(
 
     # ---- 工作区 ----
 
+    @router.post("/local/select-directory")
+    def pick_directory(request: Request) -> dict[str, Any]:
+        require_local_request(request)
+        return envelope_ok({"path": select_directory()})
+
     @router.post("/workspaces")
     def create_workspace(payload: InitRequest) -> dict[str, Any]:
         return envelope_ok(service.init(payload.path, payload.name))
@@ -84,6 +95,22 @@ def create_app(
     def create_snapshot(ws_id: str, payload: SnapshotRequest) -> dict[str, Any]:
         return envelope_ok(service.snapshot(ws_id, payload.message))
 
+    @router.post("/workspaces/{ws_id}/restore/preview")
+    def preview_restore(ws_id: str, payload: RestorePreviewRequest) -> dict[str, Any]:
+        return envelope_ok(service.preview_restore(ws_id, payload.rev))
+
+    @router.post("/workspaces/{ws_id}/undo/preview")
+    def preview_undo(ws_id: str) -> dict[str, Any]:
+        return envelope_ok(service.preview_undo(ws_id))
+
+    @router.get("/workspaces/{ws_id}/restore/plans/{plan_id}")
+    def get_restore_plan(ws_id: str, plan_id: str) -> dict[str, Any]:
+        return envelope_ok(service.get_restore_plan(ws_id, plan_id))
+
+    @router.post("/workspaces/{ws_id}/restore/plans/{plan_id}/apply")
+    def apply_restore(ws_id: str, plan_id: str, payload: RestoreApplyRequest) -> dict[str, Any]:
+        return envelope_ok(service.apply_restore(ws_id, plan_id, confirm=payload.confirm))
+
     # ---- 修订 / 变更 ----
 
     @router.get("/workspaces/{ws_id}/revisions")
@@ -101,6 +128,18 @@ def create_app(
     @router.get("/workspaces/{ws_id}/changes")
     def list_changes(ws_id: str) -> dict[str, Any]:
         return envelope_ok(service.list_changes(ws_id))
+
+    @router.get("/workspaces/{ws_id}/diff")
+    def diff(
+        ws_id: str, base: str | None = None, head: str | None = None, layer: str = "L3"
+    ) -> dict[str, Any]:
+        return envelope_ok(service.diff(ws_id, base=base, head=head, layer=layer))
+
+    @router.get("/workspaces/{ws_id}/diff/summary")
+    def diff_summary(
+        ws_id: str, base: str | None = None, head: str | None = None
+    ) -> dict[str, Any]:
+        return envelope_ok(service.diff_summary(ws_id, base=base, head=head))
 
     # ---- 引用 / 锚点 ----
 
@@ -147,6 +186,10 @@ def create_app(
 
     app.include_router(router)
     assets = Path(__file__).resolve().parents[1] / "web_assets"
+    if not (assets / "index.html").is_file():
+        project = Path(__file__).resolve().parents[3]
+        if (project / "src/skillforge_vm/api/app.py").resolve() == Path(__file__).resolve():
+            assets = project / "frontend/dist"
     if (assets / "index.html").is_file():
         app.mount("/", StaticFiles(directory=assets, html=True), name="web")
     return app
