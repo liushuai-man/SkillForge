@@ -9,6 +9,7 @@ import { useTheme } from './lib/theme'
 import type { Theme } from './lib/theme'
 import Icon from './components/Icon'
 import ResizeHandle from './components/ResizeHandle'
+import SidebarSection from './components/SidebarSection'
 import type { CSSProperties } from 'react'
 import './styles.css'
 
@@ -17,6 +18,7 @@ const TextDiff = lazy(() => import('./components/TextDiff'))
 type Workspace = { workspace_id: string; name: string; root_path: string }
 type Revision = { rev_id: string; ws_id: string; seq: number; ts: string; trigger: string; source: string; parent_rev_id: string | null }
 type Ref = { name: string; rev_id: string }
+type HistorySummary = { text: string; detail: string }
 type Span = { path: string; start_byte: number; end_byte: number; text: string }
 type Unit = { id: string; path: string; kind: string; op: string; before: Span | null; after: Span | null }
 type Cluster = { id: string; label: string; units: string[] }
@@ -43,6 +45,8 @@ export default function App() {
   const [view, setView] = useState<'semantic' | 'text'>('semantic')
   const [sidebarView, setSidebarView] = useState<'explorer' | 'history' | 'compare' | 'settings'>('explorer')
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sectionsOpen, setSectionsOpen] = useState({ workspace: true, files: true, history: true, anchors: true })
+  const toggleSection = (key: keyof typeof sectionsOpen) => setSectionsOpen(current => ({ ...current, [key]: !current[key] }))
   const [sidebarWidth, setSidebarWidth] = useState(284)
   const [panelOpen, setPanelOpen] = useState(false)
   const [panelHeight, setPanelHeight] = useState(264)
@@ -73,8 +77,8 @@ export default function App() {
   const [refs, setRefs] = useState<Ref[]>([])
   const [historyUpper, setHistoryUpper] = useState<number | null>(null)
   const [historyPage, setHistoryPage] = useState(0)
-  const [summaries, setSummaries] = useState<Record<string, string>>({})
-  const summaryCache = useRef<Record<string, string>>({})
+  const [summaries, setSummaries] = useState<Record<string, HistorySummary>>({})
+  const summaryCache = useRef<Record<string, HistorySummary>>({})
   const activeWorkspace = useRef('')
   const selectionClosed = useRef(false)
   const reportRequest = useRef(0)
@@ -166,12 +170,13 @@ export default function App() {
       for (const row of pageRows) {
         if (!active) break
         if (summaryCache.current[row.rev_id]) continue
-        let summary = '首次纳管，保存目录的初始内容。'
+        let summary: HistorySummary = { text: '初始版本', detail: '首次纳管' }
         if (row.parent_rev_id) {
           try {
             const query = new URLSearchParams({ base: row.parent_rev_id, head: row.rev_id })
-            summary = (await api<{ summary: string }>(`/workspaces/${workspaceId}/diff/summary?${query}`)).summary
-          } catch { summary = '摘要暂不可用，可重载页面重试或打开版本比较。' }
+            const result = await api<{ summary: string; overview: Report['overview'] }>(`/workspaces/${workspaceId}/diff/summary?${query}`)
+            summary = { text: `${result.overview.files} 个文件 · ${labels[result.overview.risk] ?? result.overview.risk}风险`, detail: result.summary }
+          } catch { summary = { text: '摘要读取失败', detail: '可刷新历史后重试，或打开版本比较。' } }
         }
         if (active && activeWorkspace.current === workspaceId) {
           summaryCache.current[row.rev_id] = summary
@@ -280,26 +285,26 @@ export default function App() {
         <div className="activity-spacer" /><button className={`activity-button ${sidebarView === 'settings' && sidebarOpen ? 'active' : ''}`} title="设置" aria-label="设置" aria-pressed={sidebarView === 'settings' && sidebarOpen} onClick={() => openSidebar('settings')}><Icon name="settings-gear" /></button>
       </nav>
       <aside className="sidebar" hidden={!sidebarOpen} aria-label={title}>
-        <div className="sidebar-heading"><h1>{title}</h1><button className="icon-button" title="刷新工作区列表" aria-label="刷新工作区列表" disabled={locked || workspacesLoading} onClick={() => void loadWorkspaces()}><Icon name="refresh" /></button></div>
+        <div className="sidebar-heading"><h1>{title}</h1><div className="sidebar-heading-actions"><button className="icon-button" title="刷新工作区列表" aria-label="刷新工作区列表" disabled={locked || workspacesLoading} onClick={() => void loadWorkspaces()}><Icon name="refresh" /></button><button className="icon-button" title="收起侧栏" aria-label="收起侧栏" onClick={() => setSidebarOpen(false)}><Icon name="arrow-left" /></button></div></div>
         <div className="sidebar-scroll">
           {sidebarView === 'explorer' && <>
-            <div className="sidebar-section-label"><Icon name="chevron-down" /><strong>工作区</strong><span className="count">{workspaces.length}</span></div>
+            <SidebarSection title="工作区" count={workspaces.length} expanded={sectionsOpen.workspace} onToggle={() => toggleSection('workspace')}>
             {workspace && <div className="workspace-root"><Icon name="folder-opened" /><strong>{workspace.name}</strong><span className="muted">已纳管</span></div>}
             {workspace && <p className="workspace-path" title={workspace.root_path}>{workspace.root_path}</p>}
             {!workspacesLoading && <AddWorkspace busy={locked} empty={!workspaces.length} onCreate={createWorkspace} />}
-            <div className="sidebar-section-label"><Icon name="chevron-down" /><strong>变更文件</strong><span className="count">{files.length}</span></div>
+            </SidebarSection><SidebarSection title="变更文件" count={files.length} expanded={sectionsOpen.files} onToggle={() => toggleSection('files')}>
             <label className="file-filter"><Icon name="search" /><span className="sr-only">筛选变更文件</span><input value={fileFilter} onChange={(event) => setFileFilter(event.target.value)} placeholder="筛选变更文件" /></label>
             <div className="file-list" aria-label="变更文件列表">{visibleFiles.map((file) => <button key={file.path} title={file.path} aria-current={activeFile === file.path && view === 'text' ? 'true' : undefined} className={`file-row ${activeFile === file.path && view === 'text' ? 'active' : ''}`} onClick={() => { setSelectedFile(file.path); setView('text'); if (viewport.width <= 700) setSidebarOpen(false) }}><Icon name="file-code" /><span className="file-name">{fileName(file.path)}<small>{file.path.includes('/') ? file.path.slice(0, file.path.lastIndexOf('/')) : ''}</small></span><span className={`file-operation ${file.op}`} aria-label={labels[file.op] ?? file.op}>{({ add: 'A', delete: 'D', modify: 'M', move: 'R' } as Record<string, string>)[file.op] ?? file.op}</span></button>)}{!visibleFiles.length && <p className="sidebar-hint">{fileFilter ? '没有匹配的变更文件。' : !workspace ? '未打开文件夹。' : loading ? '正在读取变化…' : '没有变更文件。'}</p>}</div>
             {workspace && <button className="sidebar-link" onClick={() => { setSidebarView('history'); setSidebarOpen(true) }}><Icon name="history" />浏览历史版本<span>{revisions.length}</span></button>}
-          </>}
+          </SidebarSection></>}
           {sidebarView === 'history' && <>
-            <div className="sidebar-section-label"><Icon name="chevron-down" /><strong>{workspace?.name ?? '尚未选择工作区'}</strong><span className="count">{revisions.length}</span></div>
+            <SidebarSection title="版本列表" count={revisions.length} expanded={sectionsOpen.history} onToggle={() => toggleSection('history')}>
             {workspace && <><div className="history-actions"><button disabled={locked || selected.length !== 2} onClick={compareSelected}><Icon name="diff" />比较所选 {selected.length}/2</button><button className="icon-button" aria-label="刷新历史" title="刷新历史" disabled={locked} onClick={() => void loadRevisions(workspaceId)}><Icon name="refresh" /></button></div>
               {historyUpper !== null && (revisions.at(-1)?.seq ?? 0) > historyUpper && <button className="new-revisions" onClick={() => { setHistoryUpper(revisions.at(-1)?.seq ?? null); setHistoryPage(0) }}>有新版本 · 查看最新历史</button>}
-              <div className="revision-list">{pageRows.map((revision) => <article className="revision" key={revision.rev_id}><div className="revision-heading"><input aria-label={`选择版本 ${revision.seq}`} type="checkbox" disabled={locked} checked={selected.includes(revision.rev_id)} onChange={() => setSelected((current) => current.includes(revision.rev_id) ? current.filter((id) => id !== revision.rev_id) : current.length < 2 ? [...current, revision.rev_id] : current)} /><b>版本 #{revision.seq}</b><time title={new Date(revision.ts).toLocaleString()}>{new Date(revision.ts).toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</time></div><p className="revision-summary" title={summaries[revision.rev_id]}>{summaries[revision.rev_id] || '正在读取变化摘要…'}</p><div className="revision-meta"><span>{({ init: '首次纳管', manual: '手动保存', watch: '自动保存' } as Record<string, string>)[revision.trigger] ?? revision.trigger}</span>{refs.filter((ref) => ref.rev_id === revision.rev_id).map((ref) => <span className="ref-label" key={ref.name}>{ref.name === 'last' ? '当前' : ref.name}</span>)}</div><div className="revision-actions"><button disabled={locked || revision.rev_id === latest} onClick={() => latest && compare(revision.rev_id, latest)}>与当前比较</button><button disabled={locked || Boolean(pendingRestore) || Boolean(workspaceStatusError)} onClick={() => void restore(revision.rev_id)}>恢复到这里</button></div></article>)}</div>
+              <div className="revision-list">{pageRows.map((revision) => <article className="revision" key={revision.rev_id}><div className="revision-heading"><input aria-label={`选择版本 ${revision.seq}`} type="checkbox" disabled={locked} checked={selected.includes(revision.rev_id)} onChange={() => setSelected((current) => current.includes(revision.rev_id) ? current.filter((id) => id !== revision.rev_id) : current.length < 2 ? [...current, revision.rev_id] : current)} /><b>#{revision.seq}</b>{revision.rev_id === latest && <span className="ref-label">当前</span>}<time title={`${new Date(revision.ts).toLocaleString()} · ${({ init: '首次纳管', manual: '手动保存', watch: '自动保存' } as Record<string, string>)[revision.trigger] ?? revision.trigger}`}>{new Date(revision.ts).toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</time></div><p className="revision-summary" title={summaries[revision.rev_id]?.detail}>{summaries[revision.rev_id]?.text ?? '读取中…'}</p><div className="revision-meta">{refs.filter((ref) => ref.rev_id === revision.rev_id && ref.name !== 'last').map((ref) => <span className="ref-label" key={ref.name}>{ref.name}</span>)}</div><div className="revision-actions"><button className="icon-button" title="与当前版本比较" aria-label={`比较版本 ${revision.seq} 与当前版本`} disabled={locked || revision.rev_id === latest} onClick={() => latest && compare(revision.rev_id, latest)}><Icon name="diff" /></button><button className="icon-button" title="恢复到此版本" aria-label={`恢复到版本 ${revision.seq}`} disabled={locked || Boolean(pendingRestore) || Boolean(workspaceStatusError)} onClick={() => void restore(revision.rev_id)}><Icon name="discard" /></button></div></article>)}</div>
               <div className="pagination"><button className="icon-button" title="上一页" aria-label="上一页" disabled={historyPage === 0} onClick={() => setHistoryPage((page) => page - 1)}><Icon name="arrow-left" /></button><span>{historyPage + 1} / {Math.max(1, Math.ceil(historyRows.length / 20))} · {historyRows.length} 个版本</span><button className="icon-button" title="下一页" aria-label="下一页" disabled={(historyPage + 1) * 20 >= historyRows.length} onClick={() => setHistoryPage((page) => page + 1)}><Icon name="arrow-right" /></button></div>
-              <div className="sidebar-section-label"><Icon name="chevron-down" /><strong>命名锚点</strong><button className="icon-button" title="创建锚点" aria-label="打开创建锚点面板" onClick={() => openPanel('anchor')}><Icon name="add" /></button></div>{refs.filter((ref) => ref.name !== 'last').map((ref) => <button className="sidebar-link" key={ref.name} disabled={locked} onClick={() => compare(ref.name, '@')}><Icon name="bookmark" />{ref.name}<small>{revisionLabel(ref.rev_id)}</small></button>)}
-            </>}{!workspace && <p className="sidebar-hint">先在资源管理器中添加 Skill 目录。</p>}
+              </>}</SidebarSection>{workspace && <SidebarSection title="命名锚点" count={refs.filter(ref => ref.name !== 'last').length} expanded={sectionsOpen.anchors} onToggle={() => toggleSection('anchors')} action={<button className="icon-button" title="创建锚点" aria-label="打开创建锚点面板" onClick={() => openPanel('anchor')}><Icon name="add" /></button>}>{refs.filter((ref) => ref.name !== 'last').map((ref) => <button className="sidebar-link" key={ref.name} disabled={locked} onClick={() => compare(ref.name, '@')}><Icon name="bookmark" />{ref.name}<small>{revisionLabel(ref.rev_id)}</small></button>)}
+            </SidebarSection>}{!workspace && <p className="sidebar-hint">先在资源管理器中添加 Skill 目录。</p>}
           </>}
           {sidebarView === 'compare' && <div className="sidebar-form"><p className="section-description">留空时比较最新版本与上一个版本。</p><form onSubmit={(event) => { event.preventDefault(); if (!locked && workspace) compare(baseSpec.trim() || undefined, headSpec.trim() || undefined, compareLayer) }}><label>比较基线<input disabled={locked || !workspace} list="revision-options" value={baseSpec} onChange={(event) => setBaseSpec(event.target.value)} placeholder="上一个版本 / tested / @~1" /></label><label>目标版本<input disabled={locked || !workspace} list="revision-options" value={headSpec} onChange={(event) => setHeadSpec(event.target.value)} placeholder="当前 @ / 修订 ID" /></label><label>分析层级<select disabled={locked || !workspace} value={compareLayer} onChange={(event) => setCompareLayer(event.target.value)}><option value="L3">L3 · 语义结论</option><option value="L2">L2 · 结构分析</option><option value="L1">L1 · 文字差异</option><option value="L0">L0 · 文件变化</option></select></label><button type="submit" className="primary" disabled={locked || !workspace || loading}><Icon name="diff" />比较指定版本</button><button type="button" disabled={locked || !workspace || loading} onClick={() => compare()}>恢复默认比较</button></form><p className="sidebar-hint">支持锚点、修订 ID、@ 和 @~1。未计算的层级不会被视作无变化。</p></div>}
           {sidebarView === 'settings' && <div className="sidebar-form"><h2>颜色主题</h2><div className="theme-options" aria-label="颜色主题">{([['light', '浅色'], ['dark', '深色'], ['system', '跟随系统']] as const).map(([key, label]) => <button key={key} aria-pressed={theme === key} onClick={() => setTheme(key)}><span className={`theme-preview ${key}`} /><span>{label}</span>{theme === key && <Icon name="check" />}</button>)}</div><h2>关于工作区</h2><p className="sidebar-hint">保存文件自动记录版本。文件在本机分析，纳管不会改写原文件。恢复和撤销需预览并确认。</p></div>}
