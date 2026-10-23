@@ -447,7 +447,7 @@ class WorkspaceService:
                 ),
             )
             base_id = (
-                self._baseline(ws_id)
+                head_rev.parent_rev_id
                 if base is None
                 else resolve_revset(
                     base,

@@ -74,7 +74,7 @@ export default function WorkspaceTools({ workspaceId, busy, refreshToken, onActi
     {status ? <div className="status-grid">
       <div><small>当前版本</small><strong>{status.head_seq === null ? '尚无版本' : `#${status.head_seq}`}</strong></div>
       <div><small>磁盘状态</small><strong>{status.pending_restore ? '恢复未完成' : status.has_pending_changes ? '有待捕获改动' : '内容已捕获'}</strong></div>
-      <div className="wide"><small>默认基线</small><code>{status.baseline_revision ?? '空基线（尚未设置）'}</code></div>
+      <div className="wide"><small>最近锚点</small><code>{status.baseline_revision ?? '尚未设置'}</code></div>
     </div> : !statusError && <p role="status">正在读取状态…</p>}
     {status?.pending_restore && <div className="notice"><strong>有未完成的恢复</strong><p>普通快照和锚点操作暂不可用。继续前仍会展示原计划并要求确认。</p><code>{status.pending_restore}</code><button disabled={busy} onClick={() => void onResume(status.pending_restore!)}>查看并继续恢复</button></div>}
     {tab === 'snapshot' && <form className="form-grid" onSubmit={(event) => {

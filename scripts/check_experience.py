@@ -177,8 +177,12 @@ class ExperienceCheck:
         output = self.cli("diff")
         require("报告：RPT-" in output, "CLI diff 没有返回规范报告")
         report = self.get(f"/workspaces/{self.ws}/diff")
-        require(report["base"]["rev"] == self.anchor_id, "默认报告没有使用 Baseline")
+        require(report["base"]["rev"] == self.anchor_id, "默认报告没有使用上一个修订")
         require(report["head"]["rev"] == self.revision("last")["rev_id"], "报告不是当前修订")
+        require(
+            report["base"]["rev"] == self.revision("last")["parent_rev_id"],
+            "默认报告未比较上一个修订",
+        )
         require(report["layers"]["semantic"]["status"] == "computed", "L3 没有完成")
         require(report["overview"]["changes"] >= 1, "语义变化未被识别")
         require(report["report_id"] in output, "终端与 API 的报告 ID 不一致")
@@ -252,7 +256,7 @@ class ExperienceCheck:
             ("保存自动生成 watch 修订（未调用手动 snapshot）", self.automatic_save),
             ("同内容保存五次不新增修订或操作日志", self.unchanged_save),
             ("打锚点后继续保存，锚点保持不变", self.anchor),
-            ("默认 Baseline 到 Working 的语义报告与 CLI diff", self.semantic_diff),
+            ("默认上一个修订到最新修订的语义报告与 CLI diff", self.semantic_diff),
             ("终止服务、停机修改、重启补获及历史保留", self.restart),
             ("恢复预览后取消，文件与修订保持不变", self.restore_cancel),
             ("确认恢复锚点原文、重复计划幂等、锚点不移动", self.restore_confirm),

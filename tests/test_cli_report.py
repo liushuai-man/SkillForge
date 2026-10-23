@@ -111,7 +111,7 @@ def test_cli_degraded_files_do_not_hide_available_text(report_workspace):
 
 def test_cli_unchanged_report_is_explicit(report_workspace):
     _, _, _, invoke, _ = report_workspace
-    output = invoke()
+    output = invoke("--base", "tested")
     assert "当前版本与基线没有变化。" in output
     assert "文件 0 · 语义变化 0" in output
     assert "报告：RPT-" in output

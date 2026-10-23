@@ -272,7 +272,9 @@ def ops(
 @app.command()
 def diff(
     ctx: typer.Context,
-    base: Annotated[str | None, typer.Option(help="基线修订/锚点；省略使用 Baseline")] = None,
+    base: Annotated[
+        str | None, typer.Option(help="基线修订/锚点；省略使用目标的上一个修订")
+    ] = None,
     head: Annotated[str | None, typer.Option(help="目标修订/锚点；省略使用当前修订")] = None,
     layer: Annotated[str, typer.Option(help="L0 / L1 / L2 / L3")] = "L3",
     summary: Annotated[bool, typer.Option("--summary", help="仅显示结论与计数")] = False,

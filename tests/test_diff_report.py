@@ -21,14 +21,14 @@ def _service(tmp_path, text: str) -> tuple[WorkspaceService, str, object]:
     return service, ws, file
 
 
-def test_default_report_uses_anchor_baseline_and_is_cached(tmp_path) -> None:
+def test_explicit_anchor_report_is_cached(tmp_path) -> None:
     service, ws, file = _service(tmp_path, "# Constraints\n必须保留历史\n")
     service.set_ref(ws, "tested")
     file.write_text("# Constraints\n不得删除历史\n", encoding="utf-8")
     service.snapshot(ws)
 
-    first = service.diff(ws)
-    second = service.diff(ws)
+    first = service.diff(ws, base="tested")
+    second = service.diff(ws, base="tested")
     assert first == second
     assert first["base"]["rev"] == service._baseline(ws)
     assert first["overview"]["changes"] == 1
@@ -48,6 +48,25 @@ def test_zero_baseline_reports_additions(tmp_path) -> None:
     report = service.diff(ws)
     assert report["base"]["rev"] is None
     assert report["layers"]["semantic"]["units"][0]["op"] == "add"
+
+
+def test_default_tracks_parent_while_anchor_stays_fixed(tmp_path):
+    service, ws, file = _service(tmp_path, "# Constraints\n必须保留历史\n")
+    first = service.status(ws)["head_revision"]
+    service.set_ref(ws, "tested")
+    file.write_text("# Constraints\n必须保留完整历史\n", encoding="utf-8")
+    second = service.snapshot(ws)["revision"]["rev_id"]
+    file.write_text("# Constraints\n必须保留完整历史和证据\n", encoding="utf-8")
+    third = service.snapshot(ws)["revision"]["rev_id"]
+    report = service.diff(ws)
+    assert report["base"]["rev"] == second
+    assert report["head"]["rev"] == third
+    assert service.diff_summary(ws)["report_id"] == report["report_id"]
+    assert service.diff(ws, base="tested")["base"]["rev"] == first
+    assert service.diff(ws, head=second)["base"]["rev"] == first
+    assert service.diff(ws, head=first)["base"]["rev"] is None
+    service.set_ref(ws, "new-anchor")
+    assert service.diff(ws) == report
 
 
 def test_bad_yaml_and_binary_degrade_without_hiding_good_file(tmp_path) -> None:

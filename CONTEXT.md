@@ -26,15 +26,15 @@ A process-local grouping of consecutive Revisions produced during one editing in
 _Avoid_: Branch, persistent session
 
 **Anchor**:
-A user-created, named marker for a Revision. Successfully creating an Anchor also selects that Revision as the current Baseline.
+A user-created, named marker for a Revision. Successfully creating an Anchor also records that Revision as the current Baseline; it does not change the default comparison.
 _Avoid_: Automatic baseline, branch
 
 **Baseline**:
-The currently selected Anchor Revision used as the base of the default comparison. Before the first Anchor, the comparison uses the empty pre-history state.
+The most recently selected Anchor Revision, available for explicit comparison. It is independent of the automatic comparison against the previous Revision.
 _Avoid_: Latest Revision, automatically generated anchor
 
 **Default Comparison**:
-The comparison from Baseline to Working. It freezes both inputs as immutable Revisions before analysis begins.
+The comparison from the parent of Working to Working. The first Revision is compared with empty content. Both inputs are frozen as immutable Revisions before analysis begins.
 
 **Semantic Unit**:
 One evidence-backed piece of Skill meaning with exactly one primary kind. A Semantic Unit is counted once even when it has several effects.

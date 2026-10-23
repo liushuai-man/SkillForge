@@ -25,7 +25,9 @@ async def test_open_workspace_report_summary_and_anchor(tmp_path):
             "report_id"
         ] == report.json()["data"]["report_id"]
         assert (await client.post(url + "/refs", json={"name": "tested"})).status_code == 200
-        assert (await client.get(url + "/diff")).json()["data"]["overview"]["files"] == 0
+        assert (await client.get(url + "/diff?base=tested")).json()["data"]["overview"][
+            "files"
+        ] == 0
         file.write_text("# Constraints\n必须保留历史与证据。\n", encoding="utf-8")
         assert (await client.post(url + "/snapshots", json={})).status_code == 200
         changed = (await client.get(url + "/diff")).json()["data"]

@@ -69,7 +69,7 @@ Agent Skill 的形态是 Markdown / YAML / JSON / 提示词 / 少量资源文件
 | 原则 | 含义 | 落地要求 |
 | --- | --- | --- |
 | **零仪式** | 保存即快照，没有 add / stage / commit message 这道坎 | 用户不需要为"记录版本"做任何额外动作 |
-| **默认自动化** | 对比对象、快照命名、差异分层都由系统自动决定 | 打开页面就能看到 "Working vs Baseline" 的对比 |
+| **默认自动化** | 对比对象、快照命名、差异分层都由系统自动决定 | 打开页面就能看到 "Working vs 上一个 Revision" 的对比 |
 | **结果优先** | 先给结论，再给证据；先给语义，再给文本 | 默认视图是语义差异，"文本 diff"是最后才展开的一层 |
 | **人只处理不确定性** | 规则能判的直接判，判不了才交给人 | 低置信度的变更标为"待确认"，不猜结论 |
 | **降噪优先** | 减少红绿，提升信噪比 | 格式变化默认折叠；同一意图的多处改动聚类成一条 |
@@ -100,7 +100,7 @@ flowchart LR
 | **Revision（快照 / 修订）** | 某一时刻 Skill 全量内容的固化记录，有父修订、有时间、有触发方式 | 可见（历史列表） |
 | **Change（变更）** | 从一个快照到另一个快照的差异集合，带**稳定 Change ID** | 半可见（用于引用） |
 | **Series（变更序列）** | 一段连续的修改序列，用于区间对比 | 半可见 |
-| **Baseline（基线）** | 用户显式打锚点后选定的默认对比基准；保存不会自动移动它 | 可见 |
+| **Baseline（基线）** | 用户显式打锚点后记录的可选对比基准；保存不会自动移动它 | 可见 |
 | **Ref（引用）** | 命名指针，指向某个 Revision | 可见（打标动作） |
 | **DiffReport（对比报告）** | 两个快照之间的分层差异 + 聚类 + 结论，**可复现、可归档、可引用** | 可见（核心产物） |
 | **Op（操作）** | 对版本库的一次操作记录，支持撤销 | 不可见（但可 `undo`） |
@@ -248,7 +248,7 @@ flowchart TB
 
 | 编号 | 需求 | 验收标准 |
 | --- | --- | --- |
-| FR-04.1 | 默认对比对象 | 打开即得 `Working vs Baseline`，无需选择 |
+| FR-04.1 | 默认对比对象 | 打开即得 `Working vs 上一个 Revision`，无需选择 |
 | FR-04.2 | 引用式表达式 | 支持 `@`（工作区）、`stable`、`tested`、`last`、`<ref>~1`、`A..B` 等 |
 | FR-04.3 | 任意两点对比 | 支持任选两个 Revision / Ref |
 | FR-04.4 | 区间对比 | 支持"一段变更序列"整体对比，识别其中"哪些修改被后续改回去了" |
@@ -324,7 +324,7 @@ flowchart TB
 
 | 编号 | 如果 | 那么系统必须 |
 | --- | --- | --- |
-| EDGE-01 | 第一次用，还没有任何 Baseline | 以"零基线"模式对比（Working vs 空），流程照走，不报错 |
+| EDGE-01 | 首次纳管，当前修订没有父修订 | 以"零基线"模式对比（Working vs 空），流程照走，不报错 |
 | EDGE-02 | 保存后内容与上次完全一致 | 直接复用对象与报告，**不新增 Revision、不重复计算** |
 | EDGE-03 | 保存风暴（编辑器连续写盘） | 重置 500 ms 静默窗口；持续写入不得伪报快照成功，稳定性校验与重试见 §7.2 |
 | EDGE-04 | 文件被整体重命名 / 移动 | 识别为移动，不产生"删除+新增"两条噪声 |
@@ -350,7 +350,7 @@ flowchart TB
 
 **MVP 验收（唯一）：**
 
-> 改一次 Skill → 不做任何版本操作 → 看到"Working vs Baseline"的语义级对比报告 → 可标记锚点 → 可撤销。
+> 改一次 Skill → 不做任何版本操作 → 看到"Working vs 上一个 Revision"的语义级对比报告 → 可标记锚点 → 可撤销。
 
 ## 2.7 待决项（开工前需闭环）
 
@@ -562,6 +562,8 @@ MVP 不做独立结构视图或专门待确认面板：待确认项直接标在�
 
 ### M-10 / M-11 / M-12
 
+- 2026-10-23 默认比较调整：未选版本时展示最新与上一个修订；显式 head 单独指定时与它的父修订比较，首个修订与空内容比较。锚点只供显式选择，不控制默认版本对。语义/风险是静态内容规则提示，无需 Agent；行为效果需独立运行证据，M-13 仍零实现。
+
 - 2026-10-23 交付补齐：用户确认恢复完整既有功能后，以逐函数补丁补回 M-09 恢复载荷/查询、M-02 pending 与同事务完成保护、M-10 的报告/摘要/恢复入口与 M-04 Baseline 原子维护；不迁移数据、不改变对象格式。原文点击消费报告，不再请求已删除接口；源码服务可托管本仓库构建产物。M-11 关闭文件夹只清理当前选择、报告、历史选择和事件订阅，保留后台纳管与历史；刷新列表不自动重开，可从顶部列表重新选择。精简重复操作说明，保留路径、版本、风险、失败和恢复确认提示。
 
 - 欢迎页“添加 Skill 目录”和侧栏“打开文件夹”复用同一选择/纳管组件；两处点击均直接请求系统目录窗口，欢迎页不再只展开侧栏。取消不纳管，失败可在侧栏手动输入。
@@ -579,7 +581,7 @@ MVP 不做独立结构视图或专门待确认面板：待确认项直接标在�
 
 - 接口层：统一返回外壳、具体错误码、事件流（快照就绪 / 对比完成 / 降级发生）。
 - 界面：MVP 提供结论、语义/文本两视图、待确认标记与基础历史列表；独立结构视图和增强时间线后续做。
-- 命令行：与服务完全等价；`diff` 默认 `Working vs Baseline`。
+- 命令行：与服务完全等价；`diff` 默认 `Working vs 上一个 Revision`。
 - 2026-10-20 M-12 证据展示：`diff` 默认输出实际版本对/层级、语义分组与单元、两侧原文和 UTF-8 字节半开区间、风险依据、文件及文字变更片段、降级/待确认原因；增删的空侧明确不存在，低层未请求明确未计算。`--summary` 保留简短结论模式。展示只消费现有规范报告，不读取 Skill 文件、不重新分析、不改变 report_id 或 API；文字片段不宣称完整文件。
 - 第 3 周实现：M-10 已提供统一外壳的工作区/快照/修订/引用/恢复/事件及同步 `diff`/`diff/summary`；M-12 已提供 `start / init / workspaces / status / snapshot / diff / log / show / tag / ops / restore / undo`，业务命令只调用服务。`range-diff`、独立报告导出与 `behavior-diff` 仍不注册，避免占位成功响应。
 
@@ -813,7 +815,7 @@ skillforge-vm start                # 启动本机服务；可自动打开网页
 skillforge-vm init <path>          # 服务启动后，一次性绑定
 skillforge-vm status               # 有没有改动、跟谁比
 skillforge-vm snapshot             # 手动快照（可省略）
-skillforge-vm diff                 # 默认 Working vs Baseline
+skillforge-vm diff                 # 默认 Working vs 上一个 Revision
 skillforge-vm diff stable @~3      # 引用式对比
 skillforge-vm range-diff stable @  # 后续：区间对比
 skillforge-vm log                  # 时间线
@@ -1022,7 +1024,7 @@ Jujutsu 对我们最有价值的四点：
 | 改错了能回 | Jujutsu | Op-log + undo |
 | diff 没噪声 | difftastic | tree-sitter 结构树 + 格式噪声折叠 |
 | diff 能被看懂 | 自研 | 语义单元级差异 + 聚类标签 |
-| 对比有默认对象 | jj revset | revset 式表达式，默认 Working vs Baseline |
+| 对比有默认对象 | jj revset | revset 式表达式，默认 Working vs 上一个 Revision |
 | 区间对比 | git range-diff | Series 对比 |
 | 前端渲染 | CodeMirror / Monaco / diff2html | 复用，不自研 |
 | 大文件 | LFS / restic | MVP 整文件保真，后续再评估分块 |
@@ -1080,7 +1082,7 @@ Jujutsu 对我们最有价值的四点：
 | `A..B`（后续） | 区间表达式，不在 MVP 接受后伪装为两端 diff |
 | 缺省 | 当前选中的 Baseline 与 `@`；无 Baseline 则 base 为 null（空树），不偷偷创建 stable |
 
-成功创建任意用户命名锚点后，保留该名称并把保留引用 `baseline` 原子指向同一 Revision；后续保存只推进 Working，不推进 Baseline。一次比较把双方引用解析并固定为 Revision ID，执行中引用移动不影响本次结果。HTTP 与 CLI 使用同一个解析入口。首次锚点前用 `base.rev=null` 表达空树，禁止用空字符串或伪造 Revision 行；旧工作区不从已有命名 ref 猜测 Baseline。Working 只指最新已提交 Revision，存在 Pending Changes 时由 UI 等待 `snapshot/created` 后重新请求。决策理由见 ADR-0001/0003。
+成功创建命名锚点后，名称和保留引用 `baseline` 原子指向同一 Revision，后续保存不移动锚点。默认比较独立于锚点：head 省略取最新已提交 Revision，base 省略取该 head 的 parent_rev_id；首个修订以 `base.rev=null` 表达空树。显式 base/head 优先，解析后固定为不可变 Revision ID。HTTP/Web/CLI 共用入口；存在 Pending Changes 时等待快照提交。不迁移旧引用或改写已有报告。2026-10-23 用户调整替代 ADR-0001 的默认选择部分，状态派生仍遵循 ADR-0003。
 
 **这是"1 次点击出对比"的技术前提**：默认值必须是最常用的那一对。
 
@@ -1183,7 +1185,7 @@ MVP 可由测试人员在 Codex 中人工执行固定用例，但该流程属于
 | Workspace | 被纳管的 Skill 目录 |
 | Revision | 一次不可变修订事件（meta 对象 OID，含父/序号；不是 tree OID） |
 | Change | 一次逻辑修改，跨多个 Revision 保持稳定 ID |
-| Baseline / Ref | 用户显式打标的锚点；Baseline 是当前选中的默认对比基准 |
+| Baseline / Ref | 用户显式打标的锚点；Baseline 记录最近锚点，可显式用于比较 |
 | revset | 选择对比对象的引用式表达式 |
 | L0~L4 | 元信息 / 文本 / 结构 / 语义 / 行为 五层差异 |
 | Report | 可复现、可归档的对比报告 |
