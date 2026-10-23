@@ -28,7 +28,6 @@ export default function TextDiff({ files, hunks, degraded, dark, status, selecte
   if (!files.length) return <div className="empty">没有文件变化。</div>
   return <section className="text-diffs">
     <div className="diff-controls"><label>变更文件 <select value={selectedPath} onChange={(event) => onSelect(event.target.value)}><option value="">全部变更文件（{files.length}）</option>{files.map((file) => <option key={file.path} value={file.path}>{labels[file.op]} · {file.path}</option>)}</select></label><span>变更片段 · 只读</span></div>
-    <p className="diff-note">左：修改前 · 右：修改后 · 仅变更片段</p>
     {status === 'not_requested' && <p className="notice">本次未请求文字层；下方仅列文件变化，选择 L1 或更高层级可查看文字片段。</p>}
     {files.filter((file) => !selectedPath || file.path === selectedPath).map((file) => {
       const fileHunks = hunks.filter((hunk) => hunk.path === file.path || hunk.path === file.before_path)
