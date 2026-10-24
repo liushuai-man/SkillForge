@@ -173,23 +173,23 @@ class ExperienceCheck:
         require(self.revision("tested")["rev_id"] == self.anchor_id, "保存移动了锚点")
         require(self.revision("last")["rev_id"] != self.anchor_id, "最新修订没有推进")
 
-    def semantic_diff(self) -> None:
+    def text_diff(self) -> None:
         output = self.cli("diff")
-        require("报告：RPT-" in output, "CLI diff 没有返回规范报告")
-        report = self.get(f"/workspaces/{self.ws}/diff")
+        require("@@ " in output, "CLI diff 没有返回上下文与真实行号")
+        report = self.get(f"/workspaces/{self.ws}/compare")
         require(report["base"]["rev"] == self.anchor_id, "默认报告没有使用上一个修订")
         require(report["head"]["rev"] == self.revision("last")["rev_id"], "报告不是当前修订")
         require(
             report["base"]["rev"] == self.revision("last")["parent_rev_id"],
             "默认报告未比较上一个修订",
         )
-        require(report["layers"]["semantic"]["status"] == "computed", "L3 没有完成")
-        require(report["overview"]["changes"] >= 1, "语义变化未被识别")
-        require(report["report_id"] in output, "终端与 API 的报告 ID 不一致")
-        require("UTF-8 bytes [" in output, "终端没有展示原文证据位置")
-        require("- 用中文回答，并提供一个例子。" in output, "终端缺少修改前原文")
-        require("+ 回答不要超过三段。" in output, "终端缺少修改后原文")
-        require("UTF-8 bytes" not in self.cli("diff", "--summary"), "简短模式未生效")
+        require(len(report["files"]) == 1, "没有准确列出变更文件")
+        require(report["files"][0]["patch"].rstrip("\n") in output, "CLI/API patch 不一致")
+        require(report["head"]["rev"] in output, "终端目标版本与 API 不一致")
+        require("-用中文回答，并提供一个例子。" in output, "终端缺少修改前原文")
+        require("+回答不要超过三段。" in output, "终端缺少修改后原文")
+        require("@@ " not in self.cli("diff", "--summary"), "简短模式未生效")
+        require("语义" not in output and "风险" not in output, "默认比较仍展示抽象分析")
 
     def restart(self) -> None:
         previous = self.get(f"/workspaces/{self.ws}/revisions")
@@ -256,7 +256,7 @@ class ExperienceCheck:
             ("保存自动生成 watch 修订（未调用手动 snapshot）", self.automatic_save),
             ("同内容保存五次不新增修订或操作日志", self.unchanged_save),
             ("打锚点后继续保存，锚点保持不变", self.anchor),
-            ("默认上一个修订到最新修订的语义报告与 CLI diff", self.semantic_diff),
+            ("默认相邻版本文件/行级比较与 CLI patch 一致", self.text_diff),
             ("终止服务、停机修改、重启补获及历史保留", self.restart),
             ("恢复预览后取消，文件与修订保持不变", self.restore_cancel),
             ("确认恢复锚点原文、重复计划幂等、锚点不移动", self.restore_confirm),

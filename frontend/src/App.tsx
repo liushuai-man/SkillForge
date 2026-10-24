@@ -13,26 +13,17 @@ import SidebarSection from './components/SidebarSection'
 import type { CSSProperties } from 'react'
 import './styles.css'
 
-const TextDiff = lazy(() => import('./components/TextDiff'))
+const FileComparison = lazy(() => import('./components/FileComparison'))
 
 type Workspace = { workspace_id: string; name: string; root_path: string }
 type Revision = { rev_id: string; ws_id: string; seq: number; ts: string; trigger: string; source: string; parent_rev_id: string | null }
 type Ref = { name: string; rev_id: string }
-type HistorySummary = { text: string; detail: string }
-type Span = { path: string; start_byte: number; end_byte: number; text: string }
-type Unit = { id: string; path: string; kind: string; op: string; before: Span | null; after: Span | null }
-type Cluster = { id: string; label: string; units: string[] }
 type Report = {
-  report_id: string; layer: string; summary: string; base: { rev: string | null }; head: { rev: string }
-  overview: { files: number; changes: number | null; clusters: number; risk: string; risk_counts: Record<string, number>; needs_review: number }
-  clusters: Cluster[]
-  risk: { items: Array<{ unit: string; level: string; reason: string }> }
-  layers: { metadata: { files: Array<{ path: string; op: string; before_path?: string }> }; semantic: { status: string; units: Unit[] }; text: { status: string; hunks: Array<{ path: string; op: string; before: Span | null; after: Span | null }> } }
-  needs_review: Array<{ path: string; reason_code: string }>
-  degraded: Array<{ path: string; reason_code: string; available_layer: string }>
+  base: { rev: string | null }; head: { rev: string }; added: number; removed: number
+  files: Array<{ path: string; op: string; before_path?: string; added: number | null; removed: number | null }>
 }
 
-const labels: Record<string, string> = { add: '新增', delete: '删除', modify: '修改', move: '移动', high: '高', medium: '中', low: '低', unknown: '未知' }
+const labels: Record<string, string> = { add: '新增', delete: '删除', modify: '修改', move: '移动' }
 
 export default function App() {
   const { theme, setTheme, resolved, storageWarning } = useTheme()
@@ -42,7 +33,6 @@ export default function App() {
   const [report, setReport] = useState<Report | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [view, setView] = useState<'semantic' | 'text'>('semantic')
   const [sidebarView, setSidebarView] = useState<'explorer' | 'history' | 'compare' | 'settings'>('explorer')
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [sectionsOpen, setSectionsOpen] = useState({ workspace: true, files: true, history: true, anchors: true })
@@ -65,7 +55,6 @@ export default function App() {
   const [anchorRev, setAnchorRev] = useState('')
   const [baseSpec, setBaseSpec] = useState('')
   const [headSpec, setHeadSpec] = useState('')
-  const [compareLayer, setCompareLayer] = useState('L3')
   const [notice, setNotice] = useState('')
   const [workspacesLoading, setWorkspacesLoading] = useState(true)
   const [refreshToken, setRefreshToken] = useState(0)
@@ -77,15 +66,13 @@ export default function App() {
   const [refs, setRefs] = useState<Ref[]>([])
   const [historyUpper, setHistoryUpper] = useState<number | null>(null)
   const [historyPage, setHistoryPage] = useState(0)
-  const [summaries, setSummaries] = useState<Record<string, HistorySummary>>({})
-  const summaryCache = useRef<Record<string, HistorySummary>>({})
   const activeWorkspace = useRef('')
   const selectionClosed = useRef(false)
   const reportRequest = useRef(0)
   const revisionRequest = useRef(0)
   const workspaceRequest = useRef(0)
   const actionInFlight = useRef(false)
-  const comparison = useRef<{ base?: string; head?: string; layer: string }>({ layer: 'L3' })
+  const comparison = useRef<{ base?: string; head?: string }>({})
   const locked = busy || plan !== null
 
   const loadRevisions = useCallback(async (ws: string) => {
@@ -102,18 +89,18 @@ export default function App() {
       if (activeWorkspace.current === ws && request === revisionRequest.current) setError(reason instanceof Error ? reason.message : '历史读取失败')
     }
   }, [])
-  const loadReport = useCallback(async (ws: string, base?: string, head?: string, layer = 'L3') => {
-    comparison.current = { base, head, layer }
+  const loadReport = useCallback(async (ws: string, base?: string, head?: string) => {
+    comparison.current = { base, head }
     const request = ++reportRequest.current
     const isCurrent = () => activeWorkspace.current === ws && request === reportRequest.current
     setLoading(true); setError(''); setStale(true)
-    const query = new URLSearchParams({ layer })
+    const query = new URLSearchParams()
     if (base) query.set('base', base); if (head) query.set('head', head)
     try {
-      const next = await api<Report>(`/workspaces/${ws}/diff?${query}`)
+      const next = await api<Report>(`/workspaces/${ws}/compare?${query}`)
       if (isCurrent()) { setReport(next); setStale(false) }
     }
-    catch (reason) { if (isCurrent()) setError(reason instanceof Error ? reason.message : '报告生成失败') }
+    catch (reason) { if (isCurrent()) setError(reason instanceof Error ? reason.message : '文件比较失败') }
     finally { if (isCurrent()) setLoading(false) }
   }, [])
 
@@ -132,13 +119,12 @@ export default function App() {
   useEffect(() => {
     activeWorkspace.current = workspaceId
     if (window.innerWidth <= 700) setSidebarOpen(false)
-    comparison.current = { layer: 'L3' }
+    comparison.current = {}
     setSelectedFile(''); setFileFilter(''); setWorkspaceStatusError('')
-    summaryCache.current = {}
-    setRevisions([]); setRefs([]); setSummaries({}); setHistoryUpper(null); setHistoryPage(0); setSelected([]); setReport(null); setAnchor(''); setAnchorRev(''); setBaseSpec(''); setHeadSpec(''); setCompareLayer('L3'); setPendingRestore(null); setNotice(''); setError(''); setStreamError('')
+    setRevisions([]); setRefs([]); setHistoryUpper(null); setHistoryPage(0); setSelected([]); setReport(null); setAnchor(''); setAnchorRev(''); setBaseSpec(''); setHeadSpec(''); setPendingRestore(null); setNotice(''); setError(''); setStreamError('')
     setPlan(null)
     if (!workspaceId) { setLoading(false); return }
-    const refresh = () => { const { base, head, layer } = comparison.current; void loadRevisions(workspaceId); void loadReport(workspaceId, base, head, layer); setRefreshToken((value) => value + 1) }
+    const refresh = () => { const { base, head } = comparison.current; void loadRevisions(workspaceId); void loadReport(workspaceId, base, head); setRefreshToken((value) => value + 1) }
     refresh()
     const stream = new EventSource(`/api/workspaces/${workspaceId}/events`)
     stream.onopen = () => { if (activeWorkspace.current === workspaceId) { setStreamError(''); refresh() } }
@@ -153,8 +139,6 @@ export default function App() {
     return () => { stream.close(); activeWorkspace.current = ''; ++reportRequest.current; ++revisionRequest.current }
   }, [loadReport, loadRevisions, workspaceId])
 
-  const units = useMemo(() => new Map(report?.layers.semantic.units.map((unit) => [unit.id, unit]) ?? []), [report])
-  const risks = useMemo(() => new Map(report?.risk.items.map((risk) => [risk.unit, risk]) ?? []), [report])
   const latest = revisions.at(-1)?.rev_id
   const workspace = workspaces.find((item) => item.workspace_id === workspaceId)
   const revisionLabel = (rev: string | null) => {
@@ -164,34 +148,11 @@ export default function App() {
   }
   const historyRows = revisions.filter((row) => historyUpper !== null && row.seq <= historyUpper).slice().reverse()
   const pageRows = useMemo(() => revisions.filter((row) => row.ws_id === workspaceId && historyUpper !== null && row.seq <= historyUpper).slice().reverse().slice(historyPage * 20, (historyPage + 1) * 20), [revisions, historyPage, historyUpper, workspaceId])
-  useEffect(() => {
-    let active = true
-    void (async () => {
-      for (const row of pageRows) {
-        if (!active) break
-        if (summaryCache.current[row.rev_id]) continue
-        let summary: HistorySummary = { text: '初始版本', detail: '首次纳管' }
-        if (row.parent_rev_id) {
-          try {
-            const query = new URLSearchParams({ base: row.parent_rev_id, head: row.rev_id })
-            const result = await api<{ summary: string; overview: Report['overview'] }>(`/workspaces/${workspaceId}/diff/summary?${query}`)
-            summary = { text: `${result.overview.files} 个文件 · ${labels[result.overview.risk] ?? result.overview.risk}风险`, detail: result.summary }
-          } catch { summary = { text: '摘要读取失败', detail: '可刷新历史后重试，或打开版本比较。' } }
-        }
-        if (active && activeWorkspace.current === workspaceId) {
-          summaryCache.current[row.rev_id] = summary
-          setSummaries((current) => ({ ...current, [row.rev_id]: summary }))
-        }
-      }
-    })()
-    return () => { active = false }
-    // Each page reads immutable revision pairs once; summary updates must not restart it.
-  }, [pageRows, workspaceId])
   const runAction = async (action: () => Promise<void>, refreshReport = true) => {
     if (actionInFlight.current) return
     actionInFlight.current = true
     setBusy(true); setError(''); setNotice('')
-    try { await action(); await loadRevisions(workspaceId); if (refreshReport) { const { base, head, layer } = comparison.current; await loadReport(workspaceId, base, head, layer) } }
+    try { await action(); await loadRevisions(workspaceId); if (refreshReport) { const { base, head } = comparison.current; await loadReport(workspaceId, base, head) } }
     catch (reason) { setError(reason instanceof Error ? reason.message : '操作失败') }
     finally { setBusy(false); actionInFlight.current = false; setRefreshToken((value) => value + 1) }
   }
@@ -227,7 +188,7 @@ export default function App() {
     selectionClosed.current = true
     activeWorkspace.current = ''
     ++reportRequest.current; ++revisionRequest.current
-    setWorkspaceId(''); setView('semantic'); setPanelOpen(false); setSidebarView('explorer'); setSidebarOpen(true)
+    setWorkspaceId(''); setPanelOpen(false); setSidebarView('explorer'); setSidebarOpen(true)
   }
 
   const compareSelected = () => {
@@ -261,12 +222,12 @@ export default function App() {
 
   const openSidebar = (next: typeof sidebarView) => { if (sidebarView === next) setSidebarOpen(!sidebarOpen); else { setSidebarView(next); setSidebarOpen(true) } }
   const openPanel = (next: typeof panelTab) => { setPanelTab(next); setPanelOpen(true) }
-  const refreshCurrent = () => { const { base, head, layer } = comparison.current; void loadRevisions(workspaceId); void loadReport(workspaceId, base, head, layer); setRefreshToken((value) => value + 1) }
+  const refreshCurrent = () => { const { base, head } = comparison.current; void loadRevisions(workspaceId); void loadReport(workspaceId, base, head); setRefreshToken((value) => value + 1) }
   const title = { explorer: '资源管理器', history: '版本历史', compare: '版本比较', settings: '设置' }[sidebarView]
-  const files = report?.layers.metadata.files ?? []
+  const files = report?.files ?? []
   const visibleFiles = files.filter((file) => file.path.toLocaleLowerCase().includes(fileFilter.toLocaleLowerCase()))
-  const activeFile = files.some((file) => file.path === selectedFile) ? selectedFile : ''
-  const compare = (base?: string, head?: string, layer = 'L3') => { setBaseSpec(base ?? ''); setHeadSpec(head ?? ''); setCompareLayer(layer); if (viewport.width <= 700) setSidebarOpen(false); void loadReport(workspaceId, base, head, layer) }
+  const activeFile = files.some((file) => file.path === selectedFile) ? selectedFile : files[0]?.path ?? ''
+  const compare = (base?: string, head?: string) => { setBaseSpec(base ?? ''); setHeadSpec(head ?? ''); if (viewport.width <= 700) setSidebarOpen(false); void loadReport(workspaceId, base, head) }
   const fileName = (path: string) => path.split('/').at(-1) ?? path
   const maxSidebarWidth = Math.max(220, Math.min(460, viewport.width - (viewport.width <= 700 ? 80 : 368)))
   const maxPanelHeight = Math.max(180, Math.min(520, Math.floor(viewport.height * (viewport.width <= 700 ? .48 : .5))))
@@ -294,43 +255,44 @@ export default function App() {
             {!workspacesLoading && <AddWorkspace busy={locked} empty={!workspaces.length} onCreate={createWorkspace} />}
             </SidebarSection><SidebarSection title="变更文件" count={files.length} expanded={sectionsOpen.files} onToggle={() => toggleSection('files')}>
             <label className="file-filter"><Icon name="search" /><span className="sr-only">筛选变更文件</span><input value={fileFilter} onChange={(event) => setFileFilter(event.target.value)} placeholder="筛选变更文件" /></label>
-            <div className="file-list" aria-label="变更文件列表">{visibleFiles.map((file) => <button key={file.path} title={file.path} aria-current={activeFile === file.path && view === 'text' ? 'true' : undefined} className={`file-row ${activeFile === file.path && view === 'text' ? 'active' : ''}`} onClick={() => { setSelectedFile(file.path); setView('text'); if (viewport.width <= 700) setSidebarOpen(false) }}><Icon name="file-code" /><span className="file-name">{fileName(file.path)}<small>{file.path.includes('/') ? file.path.slice(0, file.path.lastIndexOf('/')) : ''}</small></span><span className={`file-operation ${file.op}`} aria-label={labels[file.op] ?? file.op}>{({ add: 'A', delete: 'D', modify: 'M', move: 'R' } as Record<string, string>)[file.op] ?? file.op}</span></button>)}{!visibleFiles.length && <p className="sidebar-hint">{fileFilter ? '没有匹配的变更文件。' : !workspace ? '未打开文件夹。' : loading ? '正在读取变化…' : '没有变更文件。'}</p>}</div>
+            <div className="file-list" aria-label="变更文件列表">{visibleFiles.map((file) => <button key={file.path} title={file.path} aria-current={activeFile === file.path ? 'true' : undefined} className={`file-row ${activeFile === file.path ? 'active' : ''}`} onClick={() => { setSelectedFile(file.path); if (viewport.width <= 700) setSidebarOpen(false) }}><Icon name="file-code" /><span className="file-name">{fileName(file.path)}<small>{file.path.includes('/') ? file.path.slice(0, file.path.lastIndexOf('/')) : ''}</small></span><span className={`file-operation ${file.op}`} aria-label={labels[file.op] ?? file.op}>{({ add: 'A', delete: 'D', modify: 'M', move: 'R' } as Record<string, string>)[file.op] ?? file.op}</span></button>)}{!visibleFiles.length && <p className="sidebar-hint">{fileFilter ? '没有匹配的变更文件。' : !workspace ? '未打开文件夹。' : loading ? '正在读取变化…' : '没有变更文件。'}</p>}</div>
             {workspace && <button className="sidebar-link" onClick={() => { setSidebarView('history'); setSidebarOpen(true) }}><Icon name="history" />浏览历史版本<span>{revisions.length}</span></button>}
           </SidebarSection></>}
-          {sidebarView === 'history' && <>
+          {(sidebarView === 'history' || sidebarView === 'explorer') && <>
             <SidebarSection title="版本列表" count={revisions.length} expanded={sectionsOpen.history} onToggle={() => toggleSection('history')}>
             {workspace && <><div className="history-actions"><button disabled={locked || selected.length !== 2} onClick={compareSelected}><Icon name="diff" />比较所选 {selected.length}/2</button><button className="icon-button" aria-label="刷新历史" title="刷新历史" disabled={locked} onClick={() => void loadRevisions(workspaceId)}><Icon name="refresh" /></button></div>
               {historyUpper !== null && (revisions.at(-1)?.seq ?? 0) > historyUpper && <button className="new-revisions" onClick={() => { setHistoryUpper(revisions.at(-1)?.seq ?? null); setHistoryPage(0) }}>有新版本 · 查看最新历史</button>}
-              <div className="revision-list">{pageRows.map((revision) => <article className="revision" key={revision.rev_id}><div className="revision-heading"><input aria-label={`选择版本 ${revision.seq}`} type="checkbox" disabled={locked} checked={selected.includes(revision.rev_id)} onChange={() => setSelected((current) => current.includes(revision.rev_id) ? current.filter((id) => id !== revision.rev_id) : current.length < 2 ? [...current, revision.rev_id] : current)} /><b>#{revision.seq}</b>{revision.rev_id === latest && <span className="ref-label">当前</span>}<time title={`${new Date(revision.ts).toLocaleString()} · ${({ init: '首次纳管', manual: '手动保存', watch: '自动保存' } as Record<string, string>)[revision.trigger] ?? revision.trigger}`}>{new Date(revision.ts).toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</time></div><p className="revision-summary" title={summaries[revision.rev_id]?.detail}>{summaries[revision.rev_id]?.text ?? '读取中…'}</p><div className="revision-meta">{refs.filter((ref) => ref.rev_id === revision.rev_id && ref.name !== 'last').map((ref) => <span className="ref-label" key={ref.name}>{ref.name}</span>)}</div><div className="revision-actions"><button className="icon-button" title="与当前版本比较" aria-label={`比较版本 ${revision.seq} 与当前版本`} disabled={locked || revision.rev_id === latest} onClick={() => latest && compare(revision.rev_id, latest)}><Icon name="diff" /></button><button className="icon-button" title="恢复到此版本" aria-label={`恢复到版本 ${revision.seq}`} disabled={locked || Boolean(pendingRestore) || Boolean(workspaceStatusError)} onClick={() => void restore(revision.rev_id)}><Icon name="discard" /></button></div></article>)}</div>
+              <div className="revision-list">{pageRows.map((revision) => <article className="revision" key={revision.rev_id}><div className="revision-heading"><input aria-label={`选择版本 ${revision.seq}`} type="checkbox" disabled={locked} checked={selected.includes(revision.rev_id)} onChange={() => setSelected((current) => current.includes(revision.rev_id) ? current.filter((id) => id !== revision.rev_id) : current.length < 2 ? [...current, revision.rev_id] : current)} /><b>#{revision.seq}</b>{revision.rev_id === latest && <span className="ref-label">当前</span>}<time title={`${new Date(revision.ts).toLocaleString()} · ${({ init: '首次纳管', manual: '手动保存', watch: '自动保存' } as Record<string, string>)[revision.trigger] ?? revision.trigger}`}>{new Date(revision.ts).toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</time></div><button className="revision-open" disabled={locked} onClick={() => compare(undefined, revision.rev_id)}>查看此版改动</button><div className="revision-meta">{refs.filter((ref) => ref.rev_id === revision.rev_id && ref.name !== 'last').map((ref) => <span className="ref-label" key={ref.name}>{ref.name}</span>)}</div><div className="revision-actions"><button title="与当前版本比较" aria-label={`比较版本 ${revision.seq} 与当前版本`} disabled={locked || revision.rev_id === latest} onClick={() => latest && compare(revision.rev_id, latest)}><Icon name="diff" />与最新比较</button><button title="恢复到此版本" aria-label={`恢复到版本 ${revision.seq}`} disabled={locked || Boolean(pendingRestore) || Boolean(workspaceStatusError)} onClick={() => void restore(revision.rev_id)}><Icon name="discard" />恢复此版本</button></div></article>)}</div>
               <div className="pagination"><button className="icon-button" title="上一页" aria-label="上一页" disabled={historyPage === 0} onClick={() => setHistoryPage((page) => page - 1)}><Icon name="arrow-left" /></button><span>{historyPage + 1} / {Math.max(1, Math.ceil(historyRows.length / 20))} · {historyRows.length} 个版本</span><button className="icon-button" title="下一页" aria-label="下一页" disabled={(historyPage + 1) * 20 >= historyRows.length} onClick={() => setHistoryPage((page) => page + 1)}><Icon name="arrow-right" /></button></div>
               </>}</SidebarSection>{workspace && <SidebarSection title="命名锚点" count={refs.filter(ref => ref.name !== 'last').length} expanded={sectionsOpen.anchors} onToggle={() => toggleSection('anchors')} action={<button className="icon-button" title="创建锚点" aria-label="打开创建锚点面板" onClick={() => openPanel('anchor')}><Icon name="add" /></button>}>{refs.filter((ref) => ref.name !== 'last').map((ref) => <button className="sidebar-link" key={ref.name} disabled={locked} onClick={() => compare(ref.name, '@')}><Icon name="bookmark" />{ref.name}<small>{revisionLabel(ref.rev_id)}</small></button>)}
             </SidebarSection>}{!workspace && <p className="sidebar-hint">先在资源管理器中添加 Skill 目录。</p>}
           </>}
-          {sidebarView === 'compare' && <div className="sidebar-form"><p className="section-description">留空时比较最新版本与上一个版本。</p><form onSubmit={(event) => { event.preventDefault(); if (!locked && workspace) compare(baseSpec.trim() || undefined, headSpec.trim() || undefined, compareLayer) }}><label>比较基线<input disabled={locked || !workspace} list="revision-options" value={baseSpec} onChange={(event) => setBaseSpec(event.target.value)} placeholder="上一个版本 / tested / @~1" /></label><label>目标版本<input disabled={locked || !workspace} list="revision-options" value={headSpec} onChange={(event) => setHeadSpec(event.target.value)} placeholder="当前 @ / 修订 ID" /></label><label>分析层级<select disabled={locked || !workspace} value={compareLayer} onChange={(event) => setCompareLayer(event.target.value)}><option value="L3">L3 · 语义结论</option><option value="L2">L2 · 结构分析</option><option value="L1">L1 · 文字差异</option><option value="L0">L0 · 文件变化</option></select></label><button type="submit" className="primary" disabled={locked || !workspace || loading}><Icon name="diff" />比较指定版本</button><button type="button" disabled={locked || !workspace || loading} onClick={() => compare()}>恢复默认比较</button></form><p className="sidebar-hint">支持锚点、修订 ID、@ 和 @~1。未计算的层级不会被视作无变化。</p></div>}
+          {sidebarView === 'compare' && <div className="sidebar-form"><h2>比较任意两个版本</h2><p className="section-description">使用顶部的旧版和新版下拉框；也可以输入锚点或 @~1。</p><form onSubmit={(event) => { event.preventDefault(); if (!locked && workspace) compare(baseSpec.trim() || undefined, headSpec.trim() || undefined) }}><label>旧版本<input disabled={locked || !workspace} list="revision-options" value={baseSpec} onChange={(event) => setBaseSpec(event.target.value)} placeholder="上一个版本 / tested / @~1" /></label><label>新版本<input disabled={locked || !workspace} list="revision-options" value={headSpec} onChange={(event) => setHeadSpec(event.target.value)} placeholder="最新版本 / @" /></label><button type="submit" className="primary" disabled={locked || !workspace || loading}>比较这两版</button><button type="button" disabled={locked || !workspace || loading} onClick={() => compare()}>比较最新两版</button></form></div>}
           {sidebarView === 'settings' && <div className="sidebar-form"><h2>颜色主题</h2><div className="theme-options" aria-label="颜色主题">{([['light', '浅色'], ['dark', '深色'], ['system', '跟随系统']] as const).map(([key, label]) => <button key={key} aria-pressed={theme === key} onClick={() => setTheme(key)}><span className={`theme-preview ${key}`} /><span>{label}</span>{theme === key && <Icon name="check" />}</button>)}</div><h2>关于工作区</h2><p className="sidebar-hint">保存文件自动记录版本。文件在本机分析，纳管不会改写原文件。恢复和撤销需预览并确认。</p></div>}
         </div>
       </aside>
       {sidebarOpen && <ResizeHandle axis="sidebar" value={actualSidebarWidth} min={220} max={maxSidebarWidth} onChange={setSidebarWidth} />}
       <main className="editor-group">
-        <nav className="editor-tabs" aria-label="对比视图"><button className={view === 'semantic' ? 'active' : ''} aria-pressed={view === 'semantic'} onClick={() => setView('semantic')}><Icon name="source-control" /><span>语义结论</span>{files.length > 0 && <small>{files.length}</small>}</button><button className={view === 'text' ? 'active' : ''} aria-pressed={view === 'text'} onClick={() => setView('text')}><Icon name="diff" /><span>{activeFile ? fileName(activeFile) : '原文差异'}</span>{activeFile && <small>原文差异</small>}</button><div className="editor-tab-spacer" />{workspace && <button className="icon-button" disabled={locked || loading} title="刷新当前对比" aria-label="刷新当前对比" onClick={refreshCurrent}><Icon name="refresh" /></button>}</nav>
-        <div className="breadcrumbs"><span>{workspace?.name ?? '未打开工作区'}</span><Icon name="chevron-right" /><span>{view === 'semantic' ? '变更概览' : activeFile || '所有变更文件'}</span>{report && <><span className="breadcrumb-spacer" /><span>{revisionLabel(report.base.rev)} <Icon name="arrow-right" /> {revisionLabel(report.head.rev)}</span><span className="layer-label">{report.layer}</span><button disabled={locked} onClick={() => { setSidebarView('compare'); setSidebarOpen(true) }}>更改比较</button></>}</div>
-        {workspace && <div className="editor-commandbar"><button className="icon-button" title="手动快照" aria-label="手动快照" disabled={locked || Boolean(pendingRestore) || Boolean(workspaceStatusError)} onClick={() => openPanel('snapshot')}><Icon name="save" /></button><button className="icon-button" title="创建锚点" aria-label="创建锚点" disabled={locked || Boolean(pendingRestore) || Boolean(workspaceStatusError)} onClick={() => openPanel('anchor')}><Icon name="bookmark" /></button><button className="icon-button" title="撤销最近一次恢复" aria-label="撤销最近一次恢复" disabled={locked || Boolean(pendingRestore) || Boolean(workspaceStatusError)} onClick={() => void undo()}><Icon name="discard" /></button><span className="breadcrumb-spacer" /><button className="icon-button" title="操作日志" aria-label="操作日志" onClick={() => openPanel('ops')}><Icon name="history" /></button></div>}
+        <div className="comparison-toolbar">
+          <label>旧版<select aria-label="旧版本" value={baseSpec} disabled={locked || !workspace} onChange={event => compare(event.target.value || undefined, headSpec || undefined)}><option value="">上一个版本</option>{revisions.slice().reverse().map(row => <option key={row.rev_id} value={row.rev_id}>#{row.seq} · {new Date(row.ts).toLocaleString()}</option>)}{refs.filter(ref => ref.name !== 'last').map(ref => <option key={ref.name} value={ref.name}>{ref.name}</option>)}</select></label>
+          <button disabled={locked || loading || stale || !report?.base.rev} title="交换旧版和新版" aria-label="交换旧版和新版" onClick={() => report && compare(report.head.rev, report.base.rev ?? undefined)}>⇄</button>
+          <label>新版<select aria-label="新版本" value={headSpec} disabled={locked || !workspace} onChange={event => compare(baseSpec || undefined, event.target.value || undefined)}><option value="">最新版本</option>{revisions.slice().reverse().map(row => <option key={row.rev_id} value={row.rev_id}>#{row.seq} · {new Date(row.ts).toLocaleString()}</option>)}{refs.filter(ref => ref.name !== 'last').map(ref => <option key={ref.name} value={ref.name}>{ref.name}</option>)}</select></label>
+          <button disabled={locked || !workspace || loading} onClick={() => compare()}>最新两版</button><button aria-label="刷新当前对比" disabled={locked || !workspace || loading} onClick={refreshCurrent}><Icon name="refresh" />刷新</button>
+        </div>
+        <div className="breadcrumbs"><span>{workspace?.name ?? '未打开工作区'}</span><Icon name="chevron-right" /><span>{activeFile || '文件比较'}</span>{report && <><span className="breadcrumb-spacer" /><span>{revisionLabel(report.base.rev)} → {revisionLabel(report.head.rev)}</span><span>{files.length} 文件 <b className="added">+{report.added}</b> <b className="removed">−{report.removed}</b></span></>}</div>
+        {workspace && <div className="editor-commandbar"><button title="文件保存后会自动记录版本" disabled={locked || Boolean(pendingRestore) || Boolean(workspaceStatusError)} onClick={() => openPanel('snapshot')}><Icon name="save" />手动快照</button><button disabled={locked || loading || stale || !report || Boolean(pendingRestore) || Boolean(workspaceStatusError)} onClick={() => { setAnchorRev(report?.head.rev ?? ''); openPanel('anchor') }}><Icon name="bookmark" />标记版本</button><button disabled={locked || Boolean(pendingRestore) || Boolean(workspaceStatusError)} onClick={() => void undo()}><Icon name="discard" />撤销恢复</button><button disabled={locked || loading || stale || !report || Boolean(pendingRestore) || Boolean(workspaceStatusError)} onClick={() => report && void restore(report.head.rev)}>恢复右侧版本…</button><span className="breadcrumb-spacer" /><button onClick={() => openPanel('ops')}><Icon name="history" />操作记录</button></div>}
         <div className="editor-notifications" aria-live="polite">{storageWarning && <p className="notice">{storageWarning}</p>}{error && <p className="notice error" role="alert"><Icon name="warning" />{error}</p>}{notice && <p className="notice success" role="status"><Icon name="check" />{notice}<button className="icon-button" aria-label="关闭提示" onClick={() => setNotice('')}><Icon name="close" /></button></p>}{workspaceStatusError && <p className="notice error" role="alert">工作区状态读取失败：{workspaceStatusError}；恢复状态尚未确认。<button onClick={() => openPanel('snapshot')}>打开状态面板</button></p>}{streamError && <p className="notice"><Icon name="warning" />{streamError}</p>}{stale && report && <p className="notice">旧结果 · {loading ? '正在更新…' : '更新失败，请刷新重试。'}</p>}{pendingRestore && <p className="notice"><Icon name="warning" />恢复未完成，普通写入已暂停。<button disabled={locked} onClick={() => void resume(pendingRestore)}>查看并继续恢复</button></p>}</div>
         <div className="editor-scroll">
           {!workspace && !workspacesLoading && <section className="welcome"><Icon name="files" /><h2>打开一个 Skill，开始记录变化</h2><AddWorkspace compact busy={locked} empty onCreate={createWorkspace} /><small>选择文件夹开始。ZIP 请先解压。</small></section>}
           {workspacesLoading && <div className="empty" role="status">正在连接本机服务…</div>}
-          {workspace && !report && loading && <div className="empty" role="status">正在生成对比报告…</div>}
-          {report && (view === 'semantic' ? <div className="semantic-document"><div className="document-heading"><span className="document-kicker">变更概览</span><span className={`risk ${report.overview.risk}`}>{labels[report.overview.risk]}风险</span><h2>{report.summary}</h2><p>{report.base.rev === null ? '首次版本，与空内容比较。' : ''}<button className="inline-link" onClick={() => setView('text')}>查看原文差异<Icon name="arrow-right" /></button></p></div><div className="metrics">{[[report.overview.files, '变更文件'], [report.overview.changes ?? '—', '语义变化'], [report.overview.clusters, '修改目的'], [report.overview.needs_review, '待确认']].map(([value, label]) => <div key={label}><b>{value}</b><span>{label}</span></div>)}</div><div className="risk-counts">{['high', 'medium', 'low', 'unknown'].map((level) => <span key={level} className={`risk ${level}`}>{labels[level]} {report.overview.risk_counts[level] ?? 0}</span>)}<small>静态规则分析 · 未接入行为对比</small></div><section className="clusters">
-            {report.clusters.map((cluster, index) => <article key={cluster.id}><h3><span className="cluster-number">{String(index + 1).padStart(2, '0')}</span>{cluster.label}<small>{cluster.units.length} 处变化</small></h3>{cluster.units.map((id) => { const unit = units.get(id); const risk = risks.get(id); if (!unit) return null; return <details key={id}><summary><em>{labels[unit.op] ?? unit.op}</em><Icon name="file-code" /><span>{unit.path}</span><span className={`risk ${risk?.level ?? 'low'}`}>{labels[risk?.level ?? 'low']}</span></summary><div className="evidence">{unit.before && <pre><small>修改前</small>{unit.before.text}</pre>}{unit.after && <pre><small>修改后</small>{unit.after.text}</pre>}{risk && <p>{risk.reason}</p>}</div></details> })}</article>)}
-            {report.needs_review.map((item, index) => <article className="review" key={`${item.path}-${index}`}><h3><Icon name="warning" />待确认 · {item.path}</h3><p>不能可靠判断是否为移动，请查看原文确认。</p></article>)}{report.degraded.map((item) => <article className="review" key={item.path}><h3>已降级 · {item.path}</h3><p>{item.reason_code} · 可查看到 {item.available_layer}</p></article>)}
-            {!report.clusters.length && <article className="semantic-empty"><Icon name={report.overview.files === 0 ? 'check' : 'diff'} /><h3>{report.layers.semantic.status === 'not_requested' ? '本次未计算语义层' : report.overview.files === 0 ? '没有文件变化' : '没有可展示的语义分组'}</h3><p>{report.layers.semantic.status === 'not_requested' ? '选择 L3 可生成语义结论；未计算不等于无变化。' : report.overview.files === 0 ? '保存相同内容不会产生新版本。' : '请查看原文差异；降级或未识别不代表没有变化。'}</p></article>}
-          </section></div> : <Suspense fallback={<p className="empty" role="status">正在载入原文差异…</p>}><TextDiff files={files} hunks={report.layers.text.hunks} degraded={report.degraded} dark={resolved === 'dark'} status={report.layers.text.status} selected={activeFile} onSelect={setSelectedFile} /></Suspense>)}
+          {workspace && !report && loading && <div className="empty" role="status">正在读取文件差异…</div>}
+          {report && (files.length === 0 ? <div className="empty"><Icon name="check" /><h2>这两个版本没有文件变化</h2><p>保存后自动记录。可从上方选择其他版本比较。</p></div> : <Suspense fallback={<p className="empty" role="status">正在载入文件差异…</p>}><FileComparison workspaceId={workspaceId} base={report.base.rev} head={report.head.rev} file={files.find(file => file.path === activeFile)!} dark={resolved === 'dark'} baseLabel={revisionLabel(report.base.rev)} headLabel={revisionLabel(report.head.rev)} /></Suspense>)}
         </div>
         {workspace && <><div hidden={!panelOpen}><ResizeHandle axis="panel" value={actualPanelHeight} min={180} max={maxPanelHeight} onChange={setPanelHeight} /></div><section className="bottom-panel" hidden={!panelOpen} aria-label="工作区操作面板"><div className="panel-tabbar"><nav aria-label="工作区管理功能">{([['snapshot', '手动快照'], ['revision', '修订与续作'], ['ops', '操作日志'], ['anchor', '锚点']] as const).map(([key, label]) => <button key={key} aria-pressed={panelTab === key} className={panelTab === key ? 'active' : ''} onClick={() => setPanelTab(key)}>{label}</button>)}</nav><button className="icon-button" aria-label="关闭底部面板" title="关闭底部面板" onClick={() => setPanelOpen(false)}><Icon name="close" /></button></div><div className="panel-scroll"><div hidden={panelTab === 'anchor'}><WorkspaceTools key={workspaceId} workspaceId={workspaceId} busy={locked} refreshToken={refreshToken} onAction={runAction} onRestore={restore} onResume={resume} onPendingChange={setPendingRestore} onStatusError={setWorkspaceStatusError} tab={panelTab === 'anchor' ? 'snapshot' : panelTab} /></div><section className="anchor-panel" hidden={panelTab !== 'anchor'}><h2>创建锚点</h2><p>命名指定版本；目标留空时先捕获当前磁盘内容。</p><form className="form-grid" onSubmit={(event) => { event.preventDefault(); if (!locked && !pendingRestore && !workspaceStatusError) void createAnchor() }}><label>锚点名称<input disabled={locked} value={anchor} onChange={(event) => setAnchor(event.target.value)} placeholder="例如 tested" /></label><label>锚点目标<input disabled={locked} list="revision-options" value={anchorRev} onChange={(event) => setAnchorRev(event.target.value)} placeholder="当前磁盘内容 / 历史修订" /></label><button className="primary" type="submit" disabled={locked || Boolean(pendingRestore) || Boolean(workspaceStatusError) || !anchor.trim()}>创建锚点</button></form></section></div></section></>}
       </main>
     </div>
-    <footer className="statusbar"><span className="status-brand"><Icon name="source-control" />本机</span><span><Icon name={(streamError || workspaceStatusError) ? 'warning' : 'check'} />{workspacesLoading ? '正在连接' : streamError ? '实时连接中断' : workspaceStatusError ? '状态读取失败' : workspace ? '自动快照已启用' : '未打开目录'}</span>{workspace && <><span className="status-workspace" title={workspace.root_path}>{workspace.name}</span><span>{pendingRestore ? '恢复待续作' : busy ? '正在处理…' : `当前 #${revisions.at(-1)?.seq ?? '—'}`}</span></>}<span className="status-spacer" />{report && <span>{report.layer} · {stale ? '旧结果' : '报告已更新'}</span>}<button disabled={!workspace} onClick={() => openPanel('revision')}>修订与续作</button><button onClick={() => { setSidebarView('settings'); setSidebarOpen(true) }}>{theme === 'system' ? '跟随系统' : resolved === 'dark' ? '深色' : '浅色'}</button></footer>
+    <footer className="statusbar"><span className="status-brand"><Icon name="source-control" />本机</span><span><Icon name={(streamError || workspaceStatusError) ? 'warning' : 'check'} />{workspacesLoading ? '正在连接' : streamError ? '实时连接中断' : workspaceStatusError ? '状态读取失败' : workspace ? '自动快照已启用' : '未打开目录'}</span>{workspace && <><span className="status-workspace" title={workspace.root_path}>{workspace.name}</span><span>{pendingRestore ? '恢复待续作' : busy ? '正在处理…' : `当前 #${revisions.at(-1)?.seq ?? '—'}`}</span></>}<span className="status-spacer" />{report && <span>{stale ? '旧结果' : '对比已更新'}</span>}<button disabled={!workspace} onClick={() => openPanel('revision')}>修订与续作</button><button onClick={() => { setSidebarView('settings'); setSidebarOpen(true) }}>{theme === 'system' ? '跟随系统' : resolved === 'dark' ? '深色' : '浅色'}</button></footer>
     <datalist id="revision-options"><option value="@">当前版本</option>{refs.filter((ref) => ref.name !== 'last').map((ref) => <option key={ref.name} value={ref.name} />)}{revisions.map((row) => <option key={row.rev_id} value={row.rev_id}>版本 #{row.seq}</option>)}</datalist>
-    {plan && <RestoreDialog key={plan.plan_id} plan={plan} busy={busy} error={error} onCancel={() => { setPlan(null); setNotice('已关闭确认窗口，不再继续回写；若恢复已开始，仍须续作原计划。'); const { base, head, layer } = comparison.current; void loadReport(workspaceId, base, head, layer) }} onConfirm={() => void applyPlan()} />}
+    {plan && <RestoreDialog key={plan.plan_id} plan={plan} busy={busy} error={error} onCancel={() => { setPlan(null); setNotice('已关闭恢复预览。'); const { base, head } = comparison.current; void loadReport(workspaceId, base, head) }} onConfirm={() => void applyPlan()} />}
   </div>
 }

@@ -17,7 +17,7 @@ import typer
 from ..core.config import Settings
 from ..workspace.manager import WorkspaceManager
 from .client import CliError, VmClient, remove_runtime, resolve_base_url, write_runtime
-from .report_view import format_report
+from .report_view import format_comparison, format_report
 
 app = typer.Typer(add_completion=False, help="SkillForge 版本管理器（服务客户端）")
 
@@ -41,7 +41,13 @@ def _resolve_ws(client: VmClient, ws: str | None) -> str:
         return workspaces[0]["workspace_id"]
     if not workspaces:
         raise CliError("还没有纳管任何工作区，先运行 `skillforge-vm init <path>`")
-    raise CliError("存在多个工作区，请用 `--ws <id>` 指定")
+    current = Path.cwd().resolve()
+    matches = [
+        row for row in workspaces if current.is_relative_to(Path(row["root_path"]).resolve())
+    ]
+    if len(matches) == 1:
+        return matches[0]["workspace_id"]
+    raise CliError("存在多个工作区；在 Skill 目录中运行，或用 --ws <id> 指定。")
 
 
 def _fail(message: str) -> None:
@@ -272,24 +278,41 @@ def ops(
 @app.command()
 def diff(
     ctx: typer.Context,
+    old: Annotated[str | None, typer.Argument(help="旧版本或锚点")] = None,
+    new: Annotated[str | None, typer.Argument(help="新版本；只给一个版本时与最新比较")] = None,
     base: Annotated[
         str | None, typer.Option(help="基线修订/锚点；省略使用目标的上一个修订")
     ] = None,
     head: Annotated[str | None, typer.Option(help="目标修订/锚点；省略使用当前修订")] = None,
-    layer: Annotated[str, typer.Option(help="L0 / L1 / L2 / L3")] = "L3",
+    layer: Annotated[str | None, typer.Option(hidden=True)] = None,
+    file: Annotated[str | None, typer.Option("--file", "-f", help="仅比较此文件路径")] = None,
+    context: Annotated[int, typer.Option("--context", "-U", min=0, max=100, help="上下文行数")] = 3,
     summary: Annotated[bool, typer.Option("--summary", help="仅显示结论与计数")] = False,
     ws: WsOpt = None,
 ) -> None:
-    """生成可复现的版本对比报告。"""
+    """查看文件和行级差异：diff [旧版本] [新版本]，默认比较最新两版。"""
+    if (old is not None or new is not None) and (base is not None or head is not None):
+        _fail("位置参数与 --base/--head 请选择一种方式。")
+    base, head = (old, new or "@") if old is not None else (base, head)
     client = _client(ctx)
     try:
         workspace_id = _resolve_ws(client, ws)
-        report = client.get(
-            f"/api/workspaces/{workspace_id}/diff", base=base, head=head, layer=layer
-        )
+        if layer is not None:
+            report = client.get(
+                f"/api/workspaces/{workspace_id}/diff", base=base, head=head, layer=layer
+            )
+        else:
+            report = client.get(
+                f"/api/workspaces/{workspace_id}/compare",
+                base=base,
+                head=head,
+                context=context,
+                file=file,
+            )
     except CliError as exc:
         _fail(str(exc))
-    typer.echo(format_report(report, summary_only=summary))
+    formatter = format_report if layer is not None else format_comparison
+    typer.echo(formatter(report, summary_only=summary))
 
 
 def _confirm_restore(client: VmClient, ws: str, plan: dict, *, yes: bool) -> None:

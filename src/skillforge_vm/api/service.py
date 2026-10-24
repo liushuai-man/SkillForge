@@ -24,6 +24,7 @@ from ..core.locking import DataRootLock, SerialGate
 from ..core.types import ObjectType, SnapshotSource, SnapshotTrigger
 from ..db.connection import connect, transaction
 from ..diff import Layer
+from ..diff.text import line_counts, unified_patch
 from ..objectstore.objects import object_id
 from ..objectstore.store import ObjectStore
 from ..oplog.models import OpKind
@@ -31,6 +32,7 @@ from ..oplog.restore import RestoreExecutor
 from ..oplog.restore_models import RestorePlan
 from ..oplog.store import OpStore
 from ..report import build_report
+from ..revision.content import read_revision_file
 from ..revision.models import Ref
 from ..revision.revset import resolve_revset
 from ..revision.store import RESERVED_REF_NAMES, RevisionStore
@@ -495,6 +497,89 @@ class WorkspaceService:
                     }
                 )
         return report
+
+    def file_content(self, ws_id: str, rev: str, path: str) -> dict[str, Any]:
+        handle = self._handle(ws_id)
+        conn = connect(handle.paths.db_file)
+        try:
+            store = RevisionStore(conn)
+            current = store.head(ws_id)
+            target = resolve_revset(
+                rev,
+                store=store,
+                ws_id=ws_id,
+                current=None if current is None else current.rev_id,
+            )
+            return read_revision_file(
+                store,
+                ObjectStore(handle.paths.objects_dir),
+                ws_id,
+                target,
+                path,
+                max_text_bytes=handle.config.ignore.max_text_bytes,
+            )
+        finally:
+            conn.close()
+
+    def compare(
+        self,
+        ws_id: str,
+        *,
+        base: str | None = None,
+        head: str | None = None,
+        context: int = 3,
+        path: str | None = None,
+    ) -> dict[str, Any]:
+        if not 0 <= context <= 100:
+            raise InvalidRequestError("上下文行数应在 0 到 100 之间")
+        # L0 只解析固定版本和文件变化，不调用解析器、语义或风险分析。
+        metadata = self.diff(ws_id, base=base, head=head, layer="L0")
+        files = []
+        for item in metadata["layers"]["metadata"]["files"]:
+            old_path = item.get("before_path", item["path"])
+            if path is not None and path not in (item["path"], old_path):
+                continue
+            old = (
+                {"status": "absent", "text": None, "mode": None}
+                if metadata["base"]["rev"] is None
+                else self.file_content(ws_id, metadata["base"]["rev"], old_path)
+            )
+            new = self.file_content(ws_id, metadata["head"]["rev"], item["path"])
+            readable = all(side["status"] in ("text", "absent") for side in (old, new))
+            before_text, after_text = old["text"] or "", new["text"] or ""
+            added, removed = line_counts(before_text, after_text) if readable else (None, None)
+            patch = (
+                unified_patch(
+                    before_text,
+                    after_text,
+                    "/dev/null" if old["status"] == "absent" else f"a/{old_path}",
+                    "/dev/null" if new["status"] == "absent" else f"b/{item['path']}",
+                    context,
+                )
+                if readable
+                else None
+            )
+            files.append(
+                {
+                    **item,
+                    "added": added,
+                    "removed": removed,
+                    "patch": patch,
+                    "before_status": old["status"],
+                    "after_status": new["status"],
+                    "before_mode": old["mode"],
+                    "after_mode": new["mode"],
+                }
+            )
+        return {
+            "base": metadata["base"],
+            "head": metadata["head"],
+            "files": files,
+            "context": context,
+            "algorithm": "text-unified-v1",
+            "added": sum(f["added"] or 0 for f in files),
+            "removed": sum(f["removed"] or 0 for f in files),
+        }
 
     def diff_summary(
         self, ws_id: str, *, base: str | None = None, head: str | None = None

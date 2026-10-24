@@ -4,6 +4,44 @@ from __future__ import annotations
 
 from typing import Any
 
+
+def format_comparison(result: dict[str, Any], *, summary_only: bool = False) -> str:
+    """展示服务生成的统一 patch，CLI 不读取工作目录或重新比较。"""
+    lines = [
+        f"版本：{result['base']['rev'] or '空内容'} → {result['head']['rev']}",
+        f"{len(result['files'])} 个文件 · +{result['added']} / -{result['removed']} 行",
+    ]
+    if not result["files"]:
+        lines.append("没有文件变化。")
+    for file in result["files"]:
+        old = file.get("before_path", file["path"])
+        display = f"{old} → {file['path']}" if old != file["path"] else file["path"]
+        counts = (
+            f"+{file['added']} -{file['removed']}" if file["added"] is not None else "文本不可显示"
+        )
+        lines.append(f"\n{LABELS[file['op']]}  {display}  {counts}")
+        if summary_only:
+            continue
+        if file["patch"]:
+            lines.append(file["patch"].rstrip("\n"))
+        elif file["patch"] is None:
+            statuses = {file["before_status"], file["after_status"]}
+            lines.append(
+                "超过文本展示上限。" if "too_large" in statuses else "二进制或非 UTF-8 文件。"
+            )
+        else:
+            lines.append(
+                "空文件已新增或删除。"
+                if file["op"] in ("add", "delete")
+                else "文件内容逐字节相同；仅路径或文件模式变化。"
+            )
+        if file["before_mode"] != file["after_mode"]:
+            lines.append(
+                f"文件模式：{file['before_mode'] or '不存在'} → {file['after_mode'] or '不存在'}"
+            )
+    return "\n".join(lines)
+
+
 LABELS = {
     "add": "新增",
     "delete": "删除",

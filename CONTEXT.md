@@ -36,17 +36,5 @@ _Avoid_: Latest Revision, automatically generated anchor
 **Default Comparison**:
 The comparison from the parent of Working to Working. The first Revision is compared with empty content. Both inputs are frozen as immutable Revisions before analysis begins.
 
-**Semantic Unit**:
-One evidence-backed piece of Skill meaning with exactly one primary kind. A Semantic Unit is counted once even when it has several effects.
-
-**Cluster**:
-A deterministic grouping that presents related Semantic Units as one user-facing intent. Each Semantic Unit belongs to at most one Cluster.
-
-**Needs Review**:
-A report item whose evidence is insufficient for a definite semantic conclusion. It is shown to the user instead of being guessed or hidden. In the MVP it is an uncertainty marker, not an approval task or a user-managed resolved state.
-_Avoid_: Approval, Todo, Resolved Review
-
-**Risk**:
-An advisory, evidence-backed severity attached during semantic report generation. Risk never blocks saving, anchoring, comparison, restoration, or undo.
-_Avoid_: Approval gate, confidence score
-
+**File Comparison**:
+A comparison between immutable Revisions that shows changed paths and Git-style line patches. Web uses complete historical text in CodeMirror MergeView to align unchanged content. No semantic, intent, risk, or behavior analysis participates in the current product.

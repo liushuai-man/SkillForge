@@ -142,13 +142,11 @@ def main() -> None:
                         break
                     time.sleep(0.05)
                 assert status["head_seq"] == 2 and not status["has_pending_changes"]
-                report = json.loads(get(f"/api/workspaces/{ws}/diff?base=@~1&head=@&layer=L3"))[
-                    "data"
-                ]
-                assert report["overview"]["changes"] == 1
-                assert report["layers"]["semantic"]["units"][0]["op"] == "modify"
-                assert report["layers"]["text"]["hunks"]
-                assert report["behavior"] is None
+                report = json.loads(get(f"/api/workspaces/{ws}/compare?base=@~1&head=@"))["data"]
+                assert len(report["files"]) == 1
+                assert report["files"][0]["op"] == "modify"
+                assert "@@ " in report["files"][0]["patch"]
+                assert "risk" not in report and "clusters" not in report
                 cli_report = subprocess.run(
                     [str(python), "-m", "skillforge_vm.cli.main", "diff", "--base", "@~1"],
                     cwd=root,
@@ -159,7 +157,8 @@ def main() -> None:
                     check=True,
                     timeout=15,
                 )
-                assert report["report_id"] in cli_report.stdout
+                assert report["files"][0]["patch"].rstrip("\n") in cli_report.stdout
+                assert report["head"]["rev"] in cli_report.stdout
                 subprocess.run(
                     [str(python), "-m", "skillforge_vm.cli.main", "tag", "tested"],
                     cwd=root,
@@ -183,7 +182,7 @@ def main() -> None:
                     assert status["head_seq"] == seq and status["pending_restore"] is None
                 print(
                     "PASS: wheel 安装、无 Node PATH、GUI 启动复用、网页资源、CLI、自动快照、"
-                    "语义报告、锚点、恢复与撤销"
+                    "文本差异、锚点、恢复与撤销"
                 )
                 if args.reuse_installed_deps:
                     print("LIMITATION: 复用现有依赖，干净环境依赖安装未验证")

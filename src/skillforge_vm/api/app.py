@@ -129,6 +129,20 @@ def create_app(
     def list_changes(ws_id: str) -> dict[str, Any]:
         return envelope_ok(service.list_changes(ws_id))
 
+    @router.get("/workspaces/{ws_id}/revisions/{rev}/content")
+    def file_content(ws_id: str, rev: str, path: str) -> dict[str, Any]:
+        return envelope_ok(service.file_content(ws_id, rev, path))
+
+    @router.get("/workspaces/{ws_id}/compare")
+    def compare(
+        ws_id: str,
+        base: str | None = None,
+        head: str | None = None,
+        context: int = Query(default=3, ge=0, le=100),
+        file: str | None = None,
+    ) -> dict[str, Any]:
+        return envelope_ok(service.compare(ws_id, base=base, head=head, context=context, path=file))
+
     @router.get("/workspaces/{ws_id}/diff")
     def diff(
         ws_id: str, base: str | None = None, head: str | None = None, layer: str = "L3"

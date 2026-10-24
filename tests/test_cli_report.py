@@ -1,4 +1,4 @@
-"""用真实规范报告验证终端能独立阅读证据，不复制一套报告 DTO。"""
+"""保留旧 --layer 显式兼容入口的证据回归；新默认文本比较另测。"""
 
 from pathlib import Path
 
@@ -29,6 +29,8 @@ def report_workspace(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(cli.VmClient, "get", get)
 
     def invoke(*args):
+        if "--layer" not in args:
+            args = ("--layer", "L3", *args)
         result = CliRunner().invoke(cli.app, ["diff", "--ws", ws, *args])
         assert result.exit_code == 0, result.exception or result.output
         return result.output

@@ -1,6 +1,6 @@
 # SkillForge
 
-本机 Skill 版本管理器：保存文件后自动记录快照，可通过网页或终端比较和恢复版本。
+本机 Skill 版本管理器：保存文件后自动记录快照，通过网页左右全文或终端 Git 风格 diff 看清改动，随时标记和恢复版本。
 
 ## 安装
 
@@ -72,3 +72,16 @@ skillforge-vm gui
 ```
 
 详细功能操作见 [用户使用指南](docs/用户使用指南.md)。
+
+## 看改了哪里
+
+网页直接选择旧版/新版，点左侧文件查看完整对齐正文；F7/Shift+F7跳转变化。终端：
+
+```powershell
+skillforge-vm diff
+skillforge-vm diff tested @ --file SKILL.md
+skillforge-vm diff --context 5
+skillforge-vm diff --summary
+```
+
+不做语义、聚类、风险或行为分析。保存自动记录，恢复始终先预览确认。

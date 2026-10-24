@@ -2,10 +2,62 @@
 
 from pathlib import PurePosixPath, PureWindowsPath
 
-from ..core.errors import ObjectCorruptedError
+from ..core.errors import InvalidRequestError, ObjectCorruptedError
 from ..core.types import MODE_EXECUTABLE, MODE_REGULAR, MODE_TREE, ObjectType
 from ..objectstore.objects import decode_tree
 from ..objectstore.store import ObjectStore
+from .store import RevisionStore
+
+
+def read_revision_file(
+    revisions: RevisionStore,
+    objects: ObjectStore,
+    ws_id: str,
+    rev_id: str,
+    path: str,
+    *,
+    max_text_bytes: int,
+) -> dict:
+    """只从已校验归属的历史索引读取全文，绝不访问工作区磁盘。"""
+    if (
+        not path
+        or "\\" in path
+        or "\x00" in path
+        or PurePosixPath(path).is_absolute()
+        or PureWindowsPath(path).drive
+        or any(part in ("", ".", "..") for part in path.split("/"))
+    ):
+        raise InvalidRequestError("请提供历史中的相对文件路径")
+    revisions.get(ws_id, rev_id)
+    entry = revisions.files(rev_id).get(path)
+    result = {
+        "revision": rev_id,
+        "path": path,
+        "status": "absent",
+        "size": 0,
+        "mode": None,
+        "text": None,
+    }
+    if entry is None:
+        return result
+    oid, mode = entry
+    kind, data = objects.read(oid)
+    if kind != ObjectType.BLOB:
+        raise ObjectCorruptedError("历史文件对象类型错误", detail=path)
+    result.update(size=len(data), mode=mode)
+    if len(data) > max_text_bytes:
+        result["status"] = "too_large"
+        return result
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        result["status"] = "binary"
+        return result
+    if "\x00" in text:
+        result["status"] = "binary"
+        return result
+    result.update(status="text", text=text)
+    return result
 
 
 def safe_relative(path: str) -> None:
