@@ -7,17 +7,15 @@
 from __future__ import annotations
 
 import json
-import os
-import socket
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
 from ..core.config import Settings
-from ..workspace.manager import WorkspaceManager
-from .client import CliError, VmClient, remove_runtime, resolve_base_url, write_runtime
+from .client import CliError, VmClient, resolve_base_url
 from .report_view import format_comparison, format_report
+from .service import run_service
 
 app = typer.Typer(add_completion=False, help="SkillForge 版本管理器（服务客户端）")
 
@@ -55,18 +53,6 @@ def _fail(message: str) -> None:
     raise typer.Exit(code=1)
 
 
-def _bind_socket(host: str, preferred: int) -> socket.socket:
-    """优先占用首选端口；被占用则退回系统分配，避免与已运行服务冲突。"""
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    if os.name != "nt":  # Windows 上 SO_REUSEADDR 可能允许端口劫持，故不设置
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    try:
-        sock.bind((host, preferred))
-    except OSError:
-        sock.bind((host, 0))
-    return sock
-
-
 @app.callback()
 def main(
     ctx: typer.Context,
@@ -86,38 +72,17 @@ def start(
     ] = None,
 ) -> None:
     """启动本机服务（阻塞运行）。"""
-    import uvicorn
-
-    from ..api.app import create_app
-
     resolved_root = data_root or ctx.obj["data_root"] or Settings().data_root
-    sock = _bind_socket(host, port)
-    actual_port = sock.getsockname()[1]
-    base_url = f"http://{host}:{actual_port}"
 
-    class LocalServer(uvicorn.Server):
-        async def startup(self, sockets=None):
-            await super().startup(sockets=sockets)
-            if self.started:
-                runtime = write_runtime(base_url, data_root=resolved_root)
-                typer.echo(f"SkillForge VM 服务已启动：{base_url}")
-                typer.echo(f"数据根：{resolved_root}")
-                typer.echo(f"端口记录：{runtime}")
-
-        async def shutdown(self, sockets=None):
-            remove_runtime(base_url, data_root=resolved_root)
-            await super().shutdown(sockets=sockets)
+    def ready(base_url: str) -> None:
+        typer.echo(f"SkillForge VM 服务已启动：{base_url}")
+        typer.echo(f"数据根：{resolved_root}")
+        typer.echo(f"端口记录：{resolved_root / 'runtime.json'}")
 
     try:
-        application = create_app(WorkspaceManager(data_root=resolved_root))
-        server = LocalServer(
-            uvicorn.Config(application, host=host, port=actual_port, log_level="info")
-        )
-        server.run(sockets=[sock])
-        if not server.started:
-            _fail("服务启动失败，请检查数据根占用及配置诊断")
-    finally:
-        sock.close()
+        run_service(resolved_root, host, port, on_ready=ready)
+    except CliError as exc:
+        _fail(str(exc))
 
 
 @app.command()

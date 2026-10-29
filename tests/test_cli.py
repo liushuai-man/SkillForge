@@ -21,7 +21,8 @@ from skillforge_vm.cli.client import (
     resolve_base_url,
     write_runtime,
 )
-from skillforge_vm.cli.main import _bind_socket, _fail, app
+from skillforge_vm.cli.main import _fail, app
+from skillforge_vm.cli.service import bind_socket as _bind_socket
 
 
 def test_resolve_base_url_priority(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
