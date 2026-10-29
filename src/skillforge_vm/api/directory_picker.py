@@ -23,7 +23,7 @@ Add-Type -AssemblyName System.Windows.Forms
 $owner = New-Object System.Windows.Forms.Form
 $owner.TopMost = $true
 $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-$dialog.Description = 'SkillForge - Select Skill folder'
+$dialog.Description = '留痕 · 选择技能目录'
 $dialog.ShowNewFolderButton = $false
 try {
     $path = $null

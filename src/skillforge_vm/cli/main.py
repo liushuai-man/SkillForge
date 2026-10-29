@@ -7,19 +7,28 @@
 from __future__ import annotations
 
 import json
-import os
-import socket
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
 from ..core.config import Settings
-from ..workspace.manager import WorkspaceManager
-from .client import CliError, VmClient, remove_runtime, resolve_base_url, write_runtime
+from .client import CliError, VmClient, resolve_base_url
 from .report_view import format_comparison, format_report
+from .service import run_service
 
-app = typer.Typer(add_completion=False, help="SkillForge 版本管理器（服务客户端）")
+app = typer.Typer(add_completion=False, help="留痕版本管理器（服务客户端）")
+
+_TRIGGERS = {"init": "首次纳管", "manual": "手动保存", "watch": "自动保存"}
+_SOURCES = {"initial": "初始内容", "edit": "文件编辑", "external": "外部修改"}
+_OPERATIONS = {
+    "workspace.init": "纳管目录",
+    "snapshot": "记录快照",
+    "ref.set": "设置锚点",
+    "restore.plan": "预览恢复",
+    "restore.begin": "开始恢复",
+    "restore.done": "完成恢复",
+}
 
 UrlOpt = Annotated[
     str | None,
@@ -47,24 +56,12 @@ def _resolve_ws(client: VmClient, ws: str | None) -> str:
     ]
     if len(matches) == 1:
         return matches[0]["workspace_id"]
-    raise CliError("存在多个工作区；在 Skill 目录中运行，或用 --ws <id> 指定。")
+    raise CliError("存在多个工作区；在 技能目录中运行，或用 --ws <id> 指定。")
 
 
 def _fail(message: str) -> None:
     typer.secho(message, err=True, fg=typer.colors.RED)
     raise typer.Exit(code=1)
-
-
-def _bind_socket(host: str, preferred: int) -> socket.socket:
-    """优先占用首选端口；被占用则退回系统分配，避免与已运行服务冲突。"""
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    if os.name != "nt":  # Windows 上 SO_REUSEADDR 可能允许端口劫持，故不设置
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    try:
-        sock.bind((host, preferred))
-    except OSError:
-        sock.bind((host, 0))
-    return sock
 
 
 @app.callback()
@@ -86,38 +83,17 @@ def start(
     ] = None,
 ) -> None:
     """启动本机服务（阻塞运行）。"""
-    import uvicorn
-
-    from ..api.app import create_app
-
     resolved_root = data_root or ctx.obj["data_root"] or Settings().data_root
-    sock = _bind_socket(host, port)
-    actual_port = sock.getsockname()[1]
-    base_url = f"http://{host}:{actual_port}"
 
-    class LocalServer(uvicorn.Server):
-        async def startup(self, sockets=None):
-            await super().startup(sockets=sockets)
-            if self.started:
-                runtime = write_runtime(base_url, data_root=resolved_root)
-                typer.echo(f"SkillForge VM 服务已启动：{base_url}")
-                typer.echo(f"数据根：{resolved_root}")
-                typer.echo(f"端口记录：{runtime}")
-
-        async def shutdown(self, sockets=None):
-            remove_runtime(base_url, data_root=resolved_root)
-            await super().shutdown(sockets=sockets)
+    def ready(base_url: str) -> None:
+        typer.echo(f"留痕 服务已启动：{base_url}")
+        typer.echo(f"数据根：{resolved_root}")
+        typer.echo(f"端口记录：{resolved_root / 'runtime.json'}")
 
     try:
-        application = create_app(WorkspaceManager(data_root=resolved_root))
-        server = LocalServer(
-            uvicorn.Config(application, host=host, port=actual_port, log_level="info")
-        )
-        server.run(sockets=[sock])
-        if not server.started:
-            _fail("服务启动失败，请检查数据根占用及配置诊断")
-    finally:
-        sock.close()
+        run_service(resolved_root, host, port, on_ready=ready)
+    except CliError as exc:
+        _fail(str(exc))
 
 
 @app.command()
@@ -138,10 +114,10 @@ def gui(
 @app.command()
 def init(
     ctx: typer.Context,
-    path: Annotated[Path, typer.Argument(help="要纳管的 Skill 目录")],
+    path: Annotated[Path, typer.Argument(help="要纳管的 技能目录")],
     name: Annotated[str | None, typer.Option(help="工作区名称")] = None,
 ) -> None:
-    """纳管一个 Skill 目录。"""
+    """纳管一个 技能目录。"""
     try:
         data = _client(ctx).post("/api/workspaces", {"path": str(path), "name": name})
     except CliError as exc:
@@ -175,7 +151,7 @@ def status(ctx: typer.Context, ws: WsOpt = None) -> None:
         _fail(str(exc))
     pending = "有未纳管改动" if data["has_pending_changes"] else "无改动"
     typer.echo(f"工作区：{data['workspace_id']}")
-    typer.echo(f"当前修订：{data['head_revision']}（seq {data['head_seq']}）")
+    typer.echo(f"当前修订：{data['head_revision']}（序号 {data['head_seq']}）")
     typer.echo(f"状态：{pending}")
     if plan_id := data.get("pending_restore"):
         typer.echo(f"恢复尚未完成：{plan_id}")
@@ -196,7 +172,7 @@ def snapshot(
     except CliError as exc:
         _fail(str(exc))
     if data["created"]:
-        typer.echo(f"已提交修订 {data['revision']['rev_id']}（seq {data['revision']['seq']}）")
+        typer.echo(f"已提交修订 {data['revision']['rev_id']}（序号 {data['revision']['seq']}）")
     else:
         typer.echo(f"内容未变化，当前修订 {data['revision']['rev_id']}")
 
@@ -218,7 +194,10 @@ def log(
         typer.echo("（暂无修订）")
         return
     for row in rows:
-        marker = f"{row['trigger']}/{row['source']}"
+        marker = (
+            f"{_TRIGGERS.get(row['trigger'], row['trigger'])}/"
+            f"{_SOURCES.get(row['source'], row['source'])}"
+        )
         typer.echo(f"{row['seq']:>4}  {row['rev_id']}  {row['ts']}  {marker}")
 
 
@@ -241,7 +220,7 @@ def show(
 @app.command()
 def tag(
     ctx: typer.Context,
-    name: Annotated[str, typer.Argument(help="锚点名（stable / tested 等）")],
+    name: Annotated[str, typer.Argument(help="锚点名（稳定版 / 已验证 等）")],
     rev: Annotated[str | None, typer.Option(help="目标修订表达式；省略取当前修订")] = None,
     ws: WsOpt = None,
 ) -> None:
@@ -272,7 +251,7 @@ def ops(
         typer.echo("（暂无操作记录）")
         return
     for row in rows:
-        typer.echo(f"{row['ts']}  {row['kind']}  {row['op_id']}")
+        typer.echo(f"{row['ts']}  {_OPERATIONS.get(row['kind'], row['kind'])}  {row['op_id']}")
 
 
 @app.command()
@@ -330,15 +309,15 @@ def _confirm_restore(client: VmClient, ws: str, plan: dict, *, yes: bool) -> Non
     }
     for change in plan["changes"]:
         typer.echo(f"  {labels[change['action']]}  {change['path']}")
-    typer.echo("将回写整个 Skill 的纳管内容；请先保存并暂停编辑。历史快照保留。")
+    typer.echo("将回写整个技能目录 的纳管内容；请先保存并暂停编辑。历史快照保留。")
     if not yes and not typer.confirm("确认执行？", default=False):
-        typer.echo("已取消，未回写 Skill 文件。")
+        typer.echo("已取消，未回写 技能文件。")
         return
     data = client.post(
         f"/api/workspaces/{ws}/restore/plans/{plan['plan_id']}/apply", {"confirm": True}
     )
     if data["created"]:
-        typer.echo(f"恢复完成：{data['revision']['rev_id']}（seq {data['revision']['seq']}）")
+        typer.echo(f"恢复完成：{data['revision']['rev_id']}（序号 {data['revision']['seq']}）")
     else:
         typer.echo(f"计划此前已完成，本次未回写文件：{data['revision']['rev_id']}")
 
@@ -351,7 +330,7 @@ def restore(
     ws: WsOpt = None,
     yes: Annotated[bool, typer.Option("--yes", help="显式确认回写，适用于自动化")] = False,
 ) -> None:
-    """预览并确认恢复整个 Skill；中断后用 --resume 继续。"""
+    """预览并确认恢复整个技能目录；中断后用 --resume 继续。"""
     if (rev is None) == (resume is None):
         _fail("请提供目标修订，或使用 --resume <计划 ID>，二者只能选一个。")
     client = _client(ctx)

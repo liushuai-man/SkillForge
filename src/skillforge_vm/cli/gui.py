@@ -27,7 +27,7 @@ def _prepare_assets() -> None:
     if (project / "src" / "skillforge_vm" / "cli" / "gui.py").resolve() != module or not (
         project / "pyproject.toml"
     ).is_file():
-        raise CliError("安装包缺少网页资源，请重新安装完整的 SkillForge wheel。")
+        raise CliError("安装包缺少网页资源，请重新安装完整的留痕安装包。")
     frontend = project / "frontend"
     index = frontend / "dist" / "index.html"
     inputs = [

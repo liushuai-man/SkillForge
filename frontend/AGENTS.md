@@ -16,6 +16,12 @@ Parent instructions apply. Read the root `AGENTS.LOCAL.md` if it exists.
 
 ## Commands and verification
 
+The product display name is 留痕. Keep user content, paths, reference values and
+technical identifiers unchanged. From the repository root, `test.cmd` runs the
+standard checks, `test.cmd desktop` opens an isolated manual session, and
+`test.cmd smoke` runs the real Electron check in a newly allocated test directory.
+The canonical preparation and command table is in README.
+
 Run from `frontend/`:
 
 ```sh
