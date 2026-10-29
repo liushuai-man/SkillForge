@@ -180,14 +180,14 @@ def snapshot(
 @app.command()
 def log(
     ctx: typer.Context,
-    limit: Annotated[int, typer.Option(help="最多显示的修订数")] = 20,
+    limit: Annotated[int, typer.Option(min=1, help="最多显示的最近修订数")] = 20,
     ws: WsOpt = None,
 ) -> None:
     """按时间线列出修订。"""
     client = _client(ctx)
     try:
         workspace_id = _resolve_ws(client, ws)
-        rows = client.get(f"/api/workspaces/{workspace_id}/revisions", limit=limit)
+        rows = client.get(f"/api/workspaces/{workspace_id}/revisions")[-limit:]
     except CliError as exc:
         _fail(str(exc))
     if not rows:
@@ -237,14 +237,14 @@ def tag(
 @app.command()
 def ops(
     ctx: typer.Context,
-    limit: Annotated[int, typer.Option(help="最多显示的条数")] = 20,
+    limit: Annotated[int, typer.Option(min=1, help="最多显示的最近条数")] = 20,
     ws: WsOpt = None,
 ) -> None:
     """查看操作日志。"""
     client = _client(ctx)
     try:
         workspace_id = _resolve_ws(client, ws)
-        rows = client.get(f"/api/workspaces/{workspace_id}/ops", limit=limit)
+        rows = client.get(f"/api/workspaces/{workspace_id}/ops")[-limit:]
     except CliError as exc:
         _fail(str(exc))
     if not rows:

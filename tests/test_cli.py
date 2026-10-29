@@ -218,3 +218,37 @@ def test_real_cli_service_discovers_fallback_port_and_snapshots(tmp_path: Path) 
         finally:
             process.kill()
             process.wait(timeout=10)
+
+
+@pytest.mark.parametrize("command", ["log", "ops"])
+def test_history_limit_keeps_recent_records(monkeypatch, command):
+    from skillforge_vm.cli import main as cli
+
+    rows = [
+        dict(
+            seq=i,
+            rev_id=f"rev-{i}",
+            op_id=f"op-{i}",
+            ts="time",
+            trigger="watch",
+            source="fs",
+            kind="snapshot",
+        )
+        for i in range(1, 26)
+    ]
+    calls = []
+
+    def get(self, path, **params):
+        calls.append((path, params))
+        return rows
+
+    monkeypatch.setattr(cli.VmClient, "get", get)
+    result = CliRunner().invoke(app, [command, "--ws", "workspace"])
+    assert result.exit_code == 0, result.output
+    key = "rev" if command == "log" else "op"
+    assert f"{key}-25" in result.output and f"{key}-6" in result.output
+    assert f"{key}-5 " not in result.output and f"{key}-5\n" not in result.output
+    assert calls == [
+        (f"/api/workspaces/workspace/{'revisions' if command == 'log' else 'ops'}", {})
+    ]
+    assert CliRunner().invoke(app, [command, "--ws", "workspace", "--limit", "0"]).exit_code != 0
