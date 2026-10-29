@@ -1,6 +1,6 @@
 # SkillForge
 
-本机 Skill 版本管理器：保存文件后自动记录快照，通过网页左右全文或终端 Git 风格 diff 看清改动，随时标记和恢复版本。
+本机 Skill 版本管理器：保存文件后自动记录快照，通过桌面客户端/网页左右全文或终端 Git 风格 diff 看清改动，随时标记和恢复版本。
 
 ## 安装
 
@@ -19,6 +19,19 @@ pipx install "安装包路径\skillforge_vm-0.1.0-py3-none-any.whl"
 ```
 
 ## 启动和快速打开
+
+桌面客户端源码运行（Node >=22.12）：
+
+```powershell
+npm --prefix desktop ci
+npm --prefix frontend run build
+.\start-desktop.cmd
+```
+
+界面在独立 Electron 窗口中打开。关闭窗口进入托盘继续监听；托盘或“应用”菜单选择退出，停止客户端自己启动的服务，复用的已有服务继续运行。后端、CLI、数据均留在本机。
+
+
+以下保留网页开发和浏览器兼容入口。
 
 开发环境在项目根目录执行一个命令：
 
