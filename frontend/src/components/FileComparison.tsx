@@ -49,7 +49,7 @@ export default function FileComparison({ workspaceId, base, head, file, dark, ba
       keymap.of([{ key: 'F7', run: goToNextChunk }, { key: 'Shift-F7', run: goToPreviousChunk }]),
       EditorView.theme({
         '&': { backgroundColor: 'var(--surface)', color: 'var(--text)' },
-        '.cm-scroller': { fontFamily: 'Consolas, monospace', lineHeight: '1.65' },
+        '.cm-scroller': { fontFamily: 'var(--font-mono)', lineHeight: '1.8' },
         '.cm-gutters': { backgroundColor: 'var(--subtle)', color: 'var(--muted)', borderColor: 'var(--border)' },
       }, { dark })]
     const view = new MergeView({

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api } from '../lib/api'
+import Icon from './Icon'
 
 export default function AddWorkspace({ busy, empty, onCreate, compact = false }: {
   busy: boolean; empty: boolean; onCreate: (path: string, name: string) => Promise<boolean>; compact?: boolean
@@ -26,18 +27,12 @@ export default function AddWorkspace({ busy, empty, onCreate, compact = false }:
     } finally { setPicking(false) }
   }
 
-  if (compact) return <>
-    <button className="primary" disabled={locked} onClick={() => void choose()}>{picking ? '请在系统窗口选择…' : '添加技能目录'}</button>
-    {error && <p className="notice error" role="alert">{error}可在左侧手动输入路径。</p>}
-  </>
-
-  return <section className="panel add-workspace">
-    <div className="section-title"><div><h2>{empty ? '添加第一个技能' : '添加技能目录'}</h2></div>
-      <button disabled={locked} onClick={() => void choose()}>{picking ? '请在系统窗口选择…' : '打开文件夹'}</button>
-    </div>
+  return <section className={`panel add-workspace ${compact ? 'start-workspace' : ''}`} aria-label="添加技能目录">
+    {compact ? <><h3>打开本地技能</h3><p className="start-description">选择已有目录，自动开始记录文件变化。</p></> : <h2>{empty ? '添加第一个技能' : '添加技能目录'}</h2>}
+    <button className={compact ? 'primary open-directory' : 'open-directory'} disabled={locked} onClick={() => void choose()}><Icon name="folder-opened" />{picking ? '请在系统窗口选择…' : '打开文件夹'}</button>
     {error && <p className="notice error" role="alert">{error}</p>}
-    {!empty && <button disabled={locked} aria-expanded={open} onClick={() => setOpen(!open)}>{open ? '收起手动输入' : '手动输入路径'}</button>}
-    {(empty || open) && <form className="form-grid" onSubmit={(event) => {
+    <button className="manual-path-toggle" disabled={locked} aria-expanded={open} onClick={() => setOpen(!open)}>{open ? '收起手动输入' : '手动输入路径'}<Icon name={open ? 'chevron-down' : 'chevron-right'} /></button>
+    {open && <form className="form-grid" onSubmit={(event) => {
       event.preventDefault()
       if (!path.trim() || locked) return
       void onCreate(path.trim(), name.trim()).then((created) => { if (created) { setPath(''); setName(''); setOpen(false) } })
@@ -45,7 +40,7 @@ export default function AddWorkspace({ busy, empty, onCreate, compact = false }:
       <label className="wide">技能目录路径<input required disabled={locked} value={path} onChange={(event) => setPath(event.target.value)} placeholder="例如 D:\skills\my-skill" /></label>
       <label>名称（可选）<input disabled={locked} value={name} onChange={(event) => setName(event.target.value)} placeholder="例如 写作助手" /></label>
       <button className="primary" disabled={locked || !path.trim()} type="submit">{locked ? '处理中…' : '纳管此目录'}</button>
-      <p className="form-hint wide">压缩包请先解压。</p>
     </form>}
+    {compact && <p className="form-hint">文件保存在本机 · 压缩包请先解压</p>}
   </section>
 }
