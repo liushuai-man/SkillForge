@@ -31,6 +31,10 @@ npm --prefix frontend run build
 界面在独立 Electron 窗口中打开。关闭窗口进入托盘继续监听；托盘或“应用”菜单选择退出，停止客户端自己启动的服务，复用的已有服务继续运行。后端、CLI、数据均留在本机。
 
 
+构建 Windows 便携包：`uv run python scripts/build_desktop.py --output dist/desktop/SkillForge-VM`。输出目录需不存在；双击包内 `SkillForge-VM.exe`，内置 Python/前端，用户无需外装 Python/Node。随包 `skillforge-vm.cmd` 可运行同一套 CLI。当前未提供安装器、签名或自动更新。
+
+验证便携包：`uv run python scripts/verify_desktop.py <包目录> --data-root <新测试目录>`。
+
 以下保留网页开发和浏览器兼容入口。
 
 开发环境在项目根目录执行一个命令：

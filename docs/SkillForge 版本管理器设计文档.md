@@ -538,6 +538,8 @@ CLI 命令与选项见 M-12；多个工作区默认按当前目录唯一匹配�
 
 ## 4.7 运行与部署形态
 
+Windows 便携包：`uv run python scripts/build_desktop.py --output dist/desktop/<新目录>`，输出目录不得已有，打包当前 Electron、现有 Python 运行时/依赖、后端和预构建网页，不要求终端用户安装 Python/Node。双击 `SkillForge-VM.exe`，随包 `skillforge-vm.cmd` 提供 CLI；Python 隔离模式避免环境变量和其他 Python 安装污染。保留运行时/依赖许可。构建机需先准备 Python 后端依赖及两个 npm 目录；不自动下载其他后端框架。当前仅 Windows 同架构便携包，安装器、代码签名、自动更新、开机启动及其他平台不在本轮；服务内存目标不等于 Electron 总进程内存已验收。 验证命令：`uv run python scripts/verify_desktop.py <包目录> --data-root <不存在的测试目录>`，仅生成测试 Skill。强杀可能由 Windows 一并终止子进程，来不及清理 runtime；按既有恢复边界允许陈旧运行记录，下次启动健康检查后覆盖，不作为业务状态或进程存活证明。
+
 2026-10-29 用户授权桌面客户端作为主要可视化入口，CLI 与本机 Python 服务保持。源码 `uv sync`、`npm --prefix desktop ci`（Node >=22.12，下载锁定的 Electron 45.1.0）、`npm --prefix frontend run build` 后双击 `start-desktop.cmd`；也可 `npm --prefix desktop start -- --data-root <目录>`。默认数据根与 CLI 相同，未引入第二套业务状态；不同数据根使用独立桌面实例锁。托盘提供打开与退出；应用菜单可明确退出。已有服务缺资源、启动占锁、非法运行地址等显示具体错误，不伪装就绪。Electron Python 启动显式使用 UTF-8 模式以保证隔离模式下的中文诊断；渲染端关闭 Node 集成、开启隔离/沙箱，无特权 preload，只允许本机服务同源导航，拒绝新窗口和权限请求。
 
 
@@ -602,7 +604,7 @@ Windows 源码用户可双击根目录 `start-web.cmd`：uv 准备已声明依�
 | 前端 | **Vite + React + TypeScript** | 对比视图需要状态管理，但不值得上重框架 |
 | 对比视图组件 | **CodeMirror 6 MergeView** | 轻、快、可控；大文件场景再评估 Monaco |
 | 命令行 | **Typer / Click** | 与服务等价、参数校验友好 |
-| 打包 | **pipx + 预构建前端 wheel；桌面便携包后续提交** | wheel 需 Python/pipx；桌面源码入口需 uv/npm 准备环境，终端用户发行包免外装 Node 为后续打包目标 |
+| 打包 | **Windows Electron 便携包；兼容 pipx + 预构建前端 wheel** | 桌面包包含 Python/依赖与前端；wheel 仍需 Python/pipx。终端用户无需外装 Node |
 
 ## 5.2 关键选型理由
 
@@ -833,7 +835,7 @@ MVP 可由测试人员在 Codex 中人工执行固定用例，但该流程属于
 # 八、MVP 范围与里程碑
 
 ## 8.1 MVP 边界
-2026-10-29 增加 Electron 桌面入口（Windows 便携包后续交付），后端和 CLI 继续单机运行；其余范围不扩展。当前只做工作区纳管、自动快照、保真对象库、修订/锚点、文件/行级比较、Web 完整并排差异、CLI unified patch、预览确认恢复与撤销、本机安装包。当前不做语义/结构树/聚类/风险/行为分析，也不继续扩大解释性抽象。
+2026-10-29 增加 Electron 桌面入口与 Windows 便携包，后端和 CLI 继续单机运行；其余范围不扩展。当前只做工作区纳管、自动快照、保真对象库、修订/锚点、文件/行级比较、Web 完整并排差异、CLI unified patch、预览确认恢复与撤销、本机安装包。当前不做语义/结构树/聚类/风险/行为分析，也不继续扩大解释性抽象。
 完整历史文件树、独立导出、ZIP 同步、跨机历史迁移不在本轮；只读全文接口服务于变更文件比较，不宣称完整快照浏览器完成。
 
 ## 8.2 三个阶段
