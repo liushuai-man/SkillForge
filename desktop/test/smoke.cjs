@@ -22,8 +22,10 @@ async function waitFor(check, label) {
 app.whenReady().then(async () => {
   const win = await waitFor(() => BrowserWindow.getAllWindows()[0], 'window');
   await waitFor(() => win.webContents.getURL().startsWith('http://'), 'local URL');
-  await waitFor(() => win.webContents.executeJavaScript("document.body.innerText.includes('添加 Skill 目录')"), 'welcome page');
+  await waitFor(() => win.webContents.executeJavaScript("document.body.innerText.includes('添加技能目录')"), 'welcome page');
   const base = new URL(win.webContents.getURL()).origin;
+  assert.equal(win.getTitle(), '留痕');
+  assert.equal(await win.webContents.executeJavaScript("document.querySelector('.titlebar-brand strong').textContent"), '留痕');
   assert.equal(await win.webContents.executeJavaScript('typeof require'), 'undefined');
   const skill = path.join(data, 'generated-skill');
   fs.mkdirSync(skill, { recursive: true });

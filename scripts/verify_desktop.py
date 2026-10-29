@@ -1,4 +1,4 @@
-"""Exercise a Windows portable desktop without external Python/Node on PATH."""
+"""验收 Windows 便携客户端：不依赖外部 Python/Node。"""
 
 from __future__ import annotations
 
@@ -16,9 +16,12 @@ from pathlib import Path
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("bundle", type=Path)
-    parser.add_argument("--data-root", required=True, type=Path, help="new isolated test directory")
+    parser.add_argument("--data-root", required=True, type=Path, help="不存在的独立测试目录")
     args = parser.parse_args()
     bundle = args.bundle.resolve()
+    executable = bundle / "留痕.exe"
+    if not executable.is_file():
+        executable = bundle / "SkillForge-VM.exe"  # Historical English-named packages.
     data = args.data_root.resolve()
     if data.exists():
         raise SystemExit(f"验证目录必须不存在：{data}")
@@ -34,9 +37,7 @@ def main() -> None:
         "PYTHONPATH": str(data / "missing"),
         "PYTHONIOENCODING": "utf-8",
     }
-    process = subprocess.Popen(
-        [str(bundle / "SkillForge-VM.exe"), "--data-root", str(data)], cwd=bundle, env=env
-    )
+    process = subprocess.Popen([str(executable), "--data-root", str(data)], cwd=bundle, env=env)
     http = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
     def request(url, body=None):
@@ -116,7 +117,7 @@ def main() -> None:
         assert cli.returncode == 0, cli.stderr
         assert "-first" in cli.stdout and "+second" in cli.stdout, cli.stdout
         duplicate = subprocess.run(
-            [str(bundle / "SkillForge-VM.exe"), "--data-root", str(data)],
+            [str(executable), "--data-root", str(data)],
             cwd=bundle,
             env=env,
             timeout=10,
@@ -126,9 +127,7 @@ def main() -> None:
         stop()
         # OS job cleanup may kill the whole tree before Python can remove runtime.
         # Check actual process death above, then require recovery with preserved history.
-        process = subprocess.Popen(
-            [str(bundle / "SkillForge-VM.exe"), "--data-root", str(data)], cwd=bundle, env=env
-        )
+        process = subprocess.Popen([str(executable), "--data-root", str(data)], cwd=bundle, env=env)
         deadline = time.monotonic() + 45
         while time.monotonic() < deadline:
             if (data / "runtime.json").exists():

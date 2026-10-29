@@ -1,4 +1,4 @@
-# SkillForge 版本管理器（Version Manager）设计文档
+# 留痕版本管理器（SkillForge VM）设计文档
 
 > **文档性质**：一份合并文档，同时承载三层内容——**产品定义 / 需求分析 / 技术实现**。
 > **抽离说明**：本文描述的是从 SkillForge 主平台中**把「版本管理器」抽离出来**的版本。抽离后它只做一件事——**管理 Skill 的版本，并把版本对比做透**。
@@ -381,6 +381,7 @@ flowchart TB
 - 恢复性能限制：v1 每步全量复核磁盘与目标对象，批量恢复存在近似平方级读取开销；目前只验收小型 Skill，未验证大量文件恢复时延。此限制不改变普通快照的性能目标。
 
 ### M-10 / M-11 / M-12
+- 2026-10-29 中文呈现：产品显示名为“留痕”，副标题“版本管理器”；M-11 顶栏、欢迎页、窗口/托盘/菜单与目录选择提示统一中文，文件徽标“增/删/改/移”，修订触发方式及系统 baseline 引用使用中文标签，M-12 普通帮助/日志用中文。用户正文、路径、锚点名、修订编号、命令、原始技术字段及 CRLF/UTF-8 等标识保持原值；不改公开模型、持久化枚举或数据目录。
 - 2026-10-29 桌面入口：M-11 增加 `desktop/` Electron 宿主，复用现有 React/CodeMirror 与本机 HTTP，不直读数据库、不重算 diff。M-12 的 CLI start 与桌面 supervisor 共用 `cli/service.py`；HTTP、状态、对象格式不变。桌面使用原数据根和 runtime，重复打开聚焦已有窗口；关闭窗口进入托盘继续监听，明确退出时通过 stdin EOF 正常停止自有服务，复用的 CLI/网页服务继续运行；父进程异常退出通过 OS 进程句柄监控兜底，避免后代持有管道使 EOF 延迟。失败提示原因，可重新启动重试。
 - M-10：新增只读 `/compare` 和修订 `/content`，详见 §4.6。只经公开 RevisionStore/ObjectStore 读取，不读取工作目录文件来替代历史内容。
 - M-11：每文件一个只读 CodeMirror MergeView，输入两版全文；保留未变化内容与原始行号，红删绿增与字符高亮，上一处/下一处（F7/Shift+F7），可选折叠。文件头显示版本、路径、字节数、换行格式、BOM 与尾部换行。顶部直接选版本/交换/最新两版；侧栏同屏显示文件和历史；历史支持父子比较、两点比较、预览恢复。移除语义/风险/聚类首页、层级选择和逐条语义摘要请求。新增/删除明确不存在侧，二进制/超限不伪造空正文。
@@ -538,7 +539,7 @@ CLI 命令与选项见 M-12；多个工作区默认按当前目录唯一匹配�
 
 ## 4.7 运行与部署形态
 
-Windows 便携包：`uv run python scripts/build_desktop.py --output dist/desktop/<新目录>`，输出目录不得已有，打包当前 Electron、现有 Python 运行时/依赖、后端和预构建网页，不要求终端用户安装 Python/Node。双击 `SkillForge-VM.exe`，随包 `skillforge-vm.cmd` 提供 CLI；Python 隔离模式避免环境变量和其他 Python 安装污染。保留运行时/依赖许可。构建机需先准备 Python 后端依赖及两个 npm 目录；不自动下载其他后端框架。当前仅 Windows 同架构便携包，安装器、代码签名、自动更新、开机启动及其他平台不在本轮；服务内存目标不等于 Electron 总进程内存已验收。 验证命令：`uv run python scripts/verify_desktop.py <包目录> --data-root <不存在的测试目录>`，仅生成测试 Skill。强杀可能由 Windows 一并终止子进程，来不及清理 runtime；按既有恢复边界允许陈旧运行记录，下次启动健康检查后覆盖，不作为业务状态或进程存活证明。
+Windows 便携包（显示名“留痕”，历史英文可执行文件仅兼容）：`uv run python scripts/build_desktop.py --output dist/desktop/留痕`，输出目录不得已有，打包当前 Electron、现有 Python 运行时/依赖、后端和预构建网页，不要求终端用户安装 Python/Node。双击 `留痕.exe`，随包 `skillforge-vm.cmd` 提供 CLI；Python 隔离模式避免环境变量和其他 Python 安装污染。保留运行时/依赖许可。构建机需先准备 Python 后端依赖及两个 npm 目录；不自动下载其他后端框架。当前仅 Windows 同架构便携包，安装器、代码签名、自动更新、开机启动及其他平台不在本轮；服务内存目标不等于 Electron 总进程内存已验收。 验证命令：`uv run python scripts/verify_desktop.py <包目录> --data-root <不存在的测试目录>`，仅生成测试 Skill。强杀可能由 Windows 一并终止子进程，来不及清理 runtime；按既有恢复边界允许陈旧运行记录，下次启动健康检查后覆盖，不作为业务状态或进程存活证明。
 
 2026-10-29 用户授权桌面客户端作为主要可视化入口，CLI 与本机 Python 服务保持。源码 `uv sync`、`npm --prefix desktop ci`（Node >=22.12，下载锁定的 Electron 45.1.0）、`npm --prefix frontend run build` 后双击 `start-desktop.cmd`；也可 `npm --prefix desktop start -- --data-root <目录>`。默认数据根与 CLI 相同，未引入第二套业务状态；不同数据根使用独立桌面实例锁。托盘提供打开与退出；应用菜单可明确退出。已有服务缺资源、启动占锁、非法运行地址等显示具体错误，不伪装就绪。Electron Python 启动显式使用 UTF-8 模式以保证隔离模式下的中文诊断；渲染端关闭 Node 集成、开启隔离/沙箱，无特权 preload，只允许本机服务同源导航，拒绝新窗口和权限请求。
 

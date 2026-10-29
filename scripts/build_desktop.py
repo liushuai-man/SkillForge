@@ -1,4 +1,4 @@
-"""Build a Windows x64 portable desktop folder with an isolated Python runtime."""
+"""构建内置独立 Python 运行时的 Windows 桌面便携包。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from pathlib import Path
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, default=Path("dist/desktop/SkillForge-VM"))
+    parser.add_argument("--output", type=Path, default=Path("dist/desktop/留痕"))
     args = parser.parse_args()
     if sys.platform != "win32":
         raise SystemExit("本轮仅构建 Windows 便携包，其他平台尚未验收。")
@@ -27,7 +27,7 @@ def main() -> None:
     if not (root / "frontend/dist/index.html").is_file():
         raise SystemExit("请先执行 npm --prefix frontend run build")
     shutil.copytree(electron, output)
-    (output / "electron.exe").rename(output / "SkillForge-VM.exe")
+    (output / "electron.exe").rename(output / "留痕.exe")
     resources = output / "resources"
     app = resources / "app"
     app.mkdir()
@@ -111,7 +111,7 @@ def main() -> None:
         "platform": sys.platform,
     }
     (output / "build-info.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    print(f"便携包：{output / 'SkillForge-VM.exe'}")
+    print(f"便携包：{output / '留痕.exe'}")
     print("构建成功不等于干净机器、签名、离线与全部平台验收。")
 
 

@@ -13,7 +13,7 @@ export default function RestoreDialog({ plan, busy, error, onCancel, onConfirm }
     return () => element.close()
   }, [])
   return <dialog ref={dialog} aria-labelledby="restore-title" onCancel={(event) => { event.preventDefault(); if (!busy) onCancel() }}>
-    <h2 id="restore-title">确认回写整个 Skill</h2>
+    <h2 id="restore-title">确认回写整个技能</h2>
     <p>请先保存编辑器缓冲区并暂停编辑。确认后将按下列清单恢复；已有历史保留。</p>
     <dl className="plan-info"><dt>计划</dt><dd>{plan.plan_id}</dd><dt>当前修订</dt><dd>{plan.before_rev}</dd><dt>目标修订</dt><dd>{plan.target_rev}</dd></dl>
     <ul className="plan-changes">{plan.changes.map((change) => <li key={`${change.action}-${change.path}`}><b>{labels[change.action] ?? change.action}</b><code>{change.path}</code></li>)}</ul>

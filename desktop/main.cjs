@@ -11,12 +11,12 @@ let exiting = false;
 const dataIndex = process.argv.indexOf('--data-root');
 const dataRoot = dataIndex >= 0 ? process.argv[dataIndex + 1] : undefined;
 if (dataIndex >= 0 && (!dataRoot || dataRoot.startsWith('--'))) {
-  dialog.showErrorBox('SkillForge VM', '--data-root 后需要指定数据目录');
+  dialog.showErrorBox('留痕', '--data-root 后需要指定数据目录');
   app.exit(1);
 }
 // Separate desktop instances can use separate data roots; the service writer lock remains authoritative.
 if (dataRoot) app.setPath('userData', path.resolve(dataRoot, 'desktop'));
-app.setName('SkillForge VM');
+app.setName('留痕');
 
 function showWindow() {
   if (!window || window.isDestroyed()) return;
@@ -48,17 +48,17 @@ function backendCommand() {
 function createWindow(base) {
   const icon = nativeImage.createFromPath(path.join(__dirname, 'icon.png'));
   window = new BrowserWindow({
-    title: 'SkillForge VM', width: 1440, height: 940, minWidth: 760, minHeight: 540,
+    title: '留痕', width: 1440, height: 940, minWidth: 760, minHeight: 540,
     show: false, icon, backgroundColor: '#181a20',
     webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, spellcheck: false },
   });
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: '应用', submenu: [
       { label: '显示窗口', click: showWindow },
-      { label: '退出 SkillForge VM', click: () => app.quit() },
+      { label: '退出 留痕', click: () => app.quit() },
     ] },
-    { label: '编辑', submenu: [{ role: 'copy' }, { role: 'selectAll' }] },
-    { label: '视图', submenu: [{ role: 'reload' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }] },
+    { label: '编辑', submenu: [{ label: '复制', role: 'copy' }, { label: '全选', role: 'selectAll' }] },
+    { label: '视图', submenu: [{ label: '重新加载', role: 'reload' }, { label: '恢复原始大小', role: 'resetZoom' }, { label: '放大', role: 'zoomIn' }, { label: '缩小', role: 'zoomOut' }] },
   ]));
   // The renderer consumes the existing HTTP API without a privileged preload bridge.
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -72,9 +72,9 @@ function createWindow(base) {
     if (!quitting && tray) { event.preventDefault(); window.hide(); }
   });
   tray = new Tray(icon);
-  tray.setToolTip('SkillForge VM · 关闭窗口后继续监听');
+  tray.setToolTip('留痕 · 关闭窗口后继续监听');
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: '打开 SkillForge VM', click: showWindow },
+    { label: '打开 留痕', click: showWindow },
     { label: '退出', click: () => app.quit() },
   ]));
   tray.on('double-click', showWindow);
@@ -106,5 +106,5 @@ if (!app.requestSingleInstanceLock()) {
       env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUNBUFFERED: '1' },
     }, error => { dialog.showErrorBox('本机服务连接中断', error.message); app.quit(); });
     await createWindow(await backend.url);
-  }).catch(error => { dialog.showErrorBox('SkillForge VM 启动失败', error.message); app.quit(); });
+  }).catch(error => { dialog.showErrorBox('留痕 启动失败', error.message); app.quit(); });
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { api } from '../lib/api'
+import { triggerLabel } from '../lib/display'
 
 type Status = { head_revision: string | null; head_seq: number | null; baseline_revision: string | null; has_pending_changes: boolean; pending_restore: string | null }
 type Op = { op_id: string; kind: string; payload_json: string; ts: string }
@@ -86,16 +87,16 @@ export default function WorkspaceTools({ workspaceId, busy, refreshToken, onActi
       })
     }}><label className="wide">快照说明（可选）<input disabled={busy} value={message} onChange={(event) => setMessage(event.target.value)} placeholder="例如 调整输出格式" /></label><button className="primary" disabled={busy || Boolean(statusError) || Boolean(status?.pending_restore)} type="submit">记录快照</button>{notice && <p role="status" className="wide">{notice}</p>}</form>}
     {tab === 'revision' && <div className="tool-content">
-      <form className="form-grid" onSubmit={(event) => { event.preventDefault(); void lookup() }}><label className="wide">修订或锚点<input value={rev} onChange={(event) => setRev(event.target.value)} placeholder="当前 @、tested、@~1 或修订 ID" /></label><button disabled={detailLoading || !rev.trim()} type="submit">查看修订详情</button><button type="button" disabled={busy || Boolean(statusError) || !rev.trim() || Boolean(status?.pending_restore)} onClick={() => void onRestore(rev.trim())}>预览恢复此版本</button></form>
+      <form className="form-grid" onSubmit={(event) => { event.preventDefault(); void lookup() }}><label className="wide">修订或锚点<input value={rev} onChange={(event) => setRev(event.target.value)} placeholder="当前 @、已验证、@~1 或修订编号" /></label><button disabled={detailLoading || !rev.trim()} type="submit">查看修订详情</button><button type="button" disabled={busy || Boolean(statusError) || !rev.trim() || Boolean(status?.pending_restore)} onClick={() => void onRestore(rev.trim())}>预览恢复此版本</button></form>
       {detailError && <p className="notice error" role="alert">{detailError}</p>}
-      {detail && <div className="revision-detail"><h3>版本 #{String(detail.seq)}</h3><p>{new Date(String(detail.ts)).toLocaleString()} · {String(detail.trigger)}</p><p>修订 ID：<code>{String(detail.rev_id)}</code></p><details><summary>完整修订元数据</summary><pre>{JSON.stringify(detail, null, 2)}</pre></details><p className="form-hint">这是修订元数据，不是快照文件正文。</p></div>}
-      <form className="form-grid" onSubmit={(event) => { event.preventDefault(); if (resumeId.trim()) void onResume(resumeId.trim()) }}><label className="wide">恢复计划 ID<input value={resumeId} onChange={(event) => setResumeId(event.target.value)} placeholder="OP-…" /></label><button disabled={busy || !resumeId.trim()} type="submit">读取计划并预览续作</button></form>
+      {detail && <div className="revision-detail"><h3>版本 #{String(detail.seq)}</h3><p>{new Date(String(detail.ts)).toLocaleString('zh-CN')} · {triggerLabel(String(detail.trigger))}</p><p>修订编号：<code>{String(detail.rev_id)}</code></p><details><summary>原始修订数据（技术字段）</summary><pre>{JSON.stringify(detail, null, 2)}</pre></details><p className="form-hint">这是修订元数据，不是快照文件正文。</p></div>}
+      <form className="form-grid" onSubmit={(event) => { event.preventDefault(); if (resumeId.trim()) void onResume(resumeId.trim()) }}><label className="wide">恢复计划编号<input value={resumeId} onChange={(event) => setResumeId(event.target.value)} placeholder="OP-…" /></label><button disabled={busy || !resumeId.trim()} type="submit">读取计划并预览续作</button></form>
     </div>}
     {tab === 'ops' && <div className="tool-content"><div className="section-title"><button disabled={opsLoading} onClick={() => setOpsTick((value) => value + 1)}>刷新日志</button></div>
       {opsError && <p className="notice error" role="alert">日志读取失败：{opsError}；已有记录可能已过时。</p>}
       {opsLoading && <p role="status">正在读取操作日志…</p>}
       {!ops.length && !opsLoading && !opsError && <p>暂无操作记录。</p>}
-      {ops.slice(opsPage * 20, (opsPage + 1) * 20).map((op) => <details key={op.op_id}><summary><strong>{opLabels[op.kind] ?? op.kind}</strong><time>{new Date(op.ts).toLocaleString()}</time></summary><div className="op-detail"><code>{op.op_id}</code><pre>{formatPayload(op.payload_json)}</pre></div></details>)}
+      {ops.slice(opsPage * 20, (opsPage + 1) * 20).map((op) => <details key={op.op_id}><summary><strong>{opLabels[op.kind] ?? op.kind}</strong><time>{new Date(op.ts).toLocaleString('zh-CN')}</time></summary><div className="op-detail"><code>{op.op_id}</code><pre>{formatPayload(op.payload_json)}</pre></div></details>)}
       <div className="pagination"><button disabled={opsPage === 0} onClick={() => setOpsPage((page) => page - 1)}>上一页日志</button><span>第 {opsPage + 1} 页 · {ops.length} 条</span><button disabled={(opsPage + 1) * 20 >= ops.length} onClick={() => setOpsPage((page) => page + 1)}>下一页日志</button></div>
     </div>}
   </section>

@@ -1,6 +1,8 @@
-# SkillForge
+# 留痕
 
-本机 Skill 版本管理器：保存文件后自动记录快照，通过桌面客户端/网页左右全文或终端 Git 风格 diff 看清改动，随时标记和恢复版本。
+保存即留痕，比较见原文。代码仓库和命令名仍为 `SkillForge` / `skillforge-vm`。
+
+本机技能版本管理器：保存文件后自动记录快照，通过桌面客户端/网页左右全文或终端 Git 风格 diff 看清改动，随时标记和恢复版本。
 
 ## 安装
 
@@ -31,7 +33,7 @@ npm --prefix frontend run build
 界面在独立 Electron 窗口中打开。关闭窗口进入托盘继续监听；托盘或“应用”菜单选择退出，停止客户端自己启动的服务，复用的已有服务继续运行。后端、CLI、数据均留在本机。
 
 
-构建 Windows 便携包：`uv run python scripts/build_desktop.py --output dist/desktop/SkillForge-VM`。输出目录需不存在；双击包内 `SkillForge-VM.exe`，内置 Python/前端，用户无需外装 Python/Node。随包 `skillforge-vm.cmd` 可运行同一套 CLI。当前未提供安装器、签名或自动更新。
+构建 Windows 便携包：`uv run python scripts/build_desktop.py --output dist/desktop/留痕`。输出目录需不存在；双击包内 `留痕.exe`，内置 Python/前端，用户无需外装 Python/Node。随包 `skillforge-vm.cmd` 可运行同一套 CLI。当前未提供安装器、签名或自动更新。
 
 验证便携包：`uv run python scripts/verify_desktop.py <包目录> --data-root <新测试目录>`。
 

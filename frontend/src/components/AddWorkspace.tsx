@@ -27,12 +27,12 @@ export default function AddWorkspace({ busy, empty, onCreate, compact = false }:
   }
 
   if (compact) return <>
-    <button className="primary" disabled={locked} onClick={() => void choose()}>{picking ? '请在系统窗口选择…' : '添加 Skill 目录'}</button>
+    <button className="primary" disabled={locked} onClick={() => void choose()}>{picking ? '请在系统窗口选择…' : '添加技能目录'}</button>
     {error && <p className="notice error" role="alert">{error}可在左侧手动输入路径。</p>}
   </>
 
   return <section className="panel add-workspace">
-    <div className="section-title"><div><h2>{empty ? '添加第一个 Skill' : '添加 Skill 目录'}</h2></div>
+    <div className="section-title"><div><h2>{empty ? '添加第一个技能' : '添加技能目录'}</h2></div>
       <button disabled={locked} onClick={() => void choose()}>{picking ? '请在系统窗口选择…' : '打开文件夹'}</button>
     </div>
     {error && <p className="notice error" role="alert">{error}</p>}
@@ -42,10 +42,10 @@ export default function AddWorkspace({ busy, empty, onCreate, compact = false }:
       if (!path.trim() || locked) return
       void onCreate(path.trim(), name.trim()).then((created) => { if (created) { setPath(''); setName(''); setOpen(false) } })
     }}>
-      <label className="wide">Skill 目录路径<input required disabled={locked} value={path} onChange={(event) => setPath(event.target.value)} placeholder="例如 D:\skills\my-skill" /></label>
+      <label className="wide">技能目录路径<input required disabled={locked} value={path} onChange={(event) => setPath(event.target.value)} placeholder="例如 D:\skills\my-skill" /></label>
       <label>名称（可选）<input disabled={locked} value={name} onChange={(event) => setName(event.target.value)} placeholder="例如 写作助手" /></label>
       <button className="primary" disabled={locked || !path.trim()} type="submit">{locked ? '处理中…' : '纳管此目录'}</button>
-      <p className="form-hint wide">ZIP 请先解压。</p>
+      <p className="form-hint wide">压缩包请先解压。</p>
     </form>}
   </section>
 }

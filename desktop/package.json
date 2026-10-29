@@ -2,7 +2,7 @@
   "name": "skillforge-vm-desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "SkillForge VM 本机桌面客户端",
+  "description": "留痕本机桌面客户端",
   "main": "main.cjs",
   "engines": { "node": ">=22.12.0" },
   "scripts": {
