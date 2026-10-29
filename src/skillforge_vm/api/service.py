@@ -24,7 +24,7 @@ from ..core.locking import DataRootLock, SerialGate
 from ..core.types import ObjectType, SnapshotSource, SnapshotTrigger
 from ..db.connection import connect, transaction
 from ..diff import Layer
-from ..diff.text import line_counts, unified_patch
+from ..diff.text import compare_text
 from ..objectstore.objects import object_id
 from ..objectstore.store import ObjectStore
 from ..oplog.models import OpKind
@@ -547,18 +547,16 @@ class WorkspaceService:
             new = self.file_content(ws_id, metadata["head"]["rev"], item["path"])
             readable = all(side["status"] in ("text", "absent") for side in (old, new))
             before_text, after_text = old["text"] or "", new["text"] or ""
-            added, removed = line_counts(before_text, after_text) if readable else (None, None)
-            patch = (
-                unified_patch(
+            if readable:
+                added, removed, patch = compare_text(
                     before_text,
                     after_text,
                     "/dev/null" if old["status"] == "absent" else f"a/{old_path}",
                     "/dev/null" if new["status"] == "absent" else f"b/{item['path']}",
                     context,
                 )
-                if readable
-                else None
-            )
+            else:
+                added = removed = patch = None
             files.append(
                 {
                     **item,
@@ -576,7 +574,7 @@ class WorkspaceService:
             "head": metadata["head"],
             "files": files,
             "context": context,
-            "algorithm": "text-unified-v1",
+            "algorithm": "text-unified-v2",
             "added": sum(f["added"] or 0 for f in files),
             "removed": sum(f["removed"] or 0 for f in files),
         }

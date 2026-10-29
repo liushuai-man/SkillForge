@@ -127,15 +127,21 @@ button.icon-button { border: 0; padding: 4px; min-height: 26px; width: 26px; fle
 .theme-preview.system { background: linear-gradient(90deg, #fff 50%, #1f1f1f 50%); }
 .history-actions { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; gap: 6px; }
 .history-actions > button:first-child { flex: 1; font-size: var(--font-sm); }
-.revision { padding: 14px 16px; border-bottom: 1px solid var(--border); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
-.revision-heading { display: flex; align-items: center; gap: 8px; grid-column: 1 / -1; }
+.revision { padding: 6px 12px; border-bottom: 1px solid var(--border); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; }
+.revision.is-current { box-shadow: inset 2px 0 var(--accent); background: var(--subtle); }
+.revision-heading { display: flex; align-items: center; gap: 7px; grid-column: 1 / -1; min-width: 0; min-height: 24px; }
 .revision-heading b { font-size: var(--font-md); font-weight: 600; }
-.revision-heading time { font-size: var(--font-xs); color: var(--muted); margin-left: auto; }
+.revision-heading .ref-label { font-size: var(--font-xs); padding: 0 5px; }
+.revision-heading time { font-size: var(--font-xs); color: var(--muted); margin-left: auto; white-space: nowrap; }
 .revision-summary { color: var(--muted); font-size: var(--font-sm); line-height: 1.6; margin-left: 22px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
-.revision-meta { display: flex; align-items: center; gap: 6px; margin-left: 22px; font-size: var(--font-xs); color: var(--muted); flex-wrap: wrap; }
+.revision-meta { display: flex; align-items: center; gap: 4px; min-width: 0; margin-left: 21px; font-size: var(--font-xs); color: var(--muted); overflow: hidden; }
+.revision-meta .ref-label { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 5px; }
 .ref-label { background: var(--accent-soft); color: var(--accent); padding: 2px 6px; border-radius: 5px; }
-.revision-actions { display: flex; gap: 2px; margin: 0; grid-column: 2; grid-row: 2 / span 2; align-self: center; }
-.revision-actions button { font-size: var(--font-xs); min-height: 30px; padding: 4px 8px; }
+.revision-actions { display: flex; gap: 2px; margin: 0; grid-column: 2; align-self: center; }
+.revision-actions button.icon-button { width: 26px; height: 26px; min-height: 26px; padding: 5px; color: var(--muted); background: transparent; }
+.revision-actions button.icon-button:hover:not(:disabled) { background: var(--hover); color: var(--text); }
+.revision-actions button.revision-open { color: var(--accent); }
+
 .new-revisions { border: 0; width: 100%; font-size: var(--font-sm); background: var(--accent-soft); color: var(--accent); border-radius: 0; }
 .pagination { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 9px 12px; font-size: var(--font-xs); color: var(--muted); }
 .resize-handle { background: var(--subtle); border: 1px solid var(--border); z-index: 4; touch-action: none; }
@@ -306,8 +312,6 @@ summary > .icon { color: var(--muted); }
 .full-merge .cm-mergeViewEditor { min-width: 0; }
 .full-merge .cm-editor { font-size: var(--font-body); }
 .full-merge .cm-scroller { overflow-x: auto; }
-.revision-open { grid-column: 1 / -1; justify-content: flex-start; border: 0; padding: 5px 0; color: var(--accent); }
-.revision-actions { flex-wrap: wrap; grid-column: 1 / -1; grid-row: auto; }
 .added { color: #238636; }
 .removed { color: var(--danger); }
 @media (max-width: 700px) {

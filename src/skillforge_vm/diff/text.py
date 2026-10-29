@@ -16,9 +16,33 @@ def _range(start: int, end: int) -> str:
     return f"{start + 1 if length else start},{length}"
 
 
-def unified_patch(before: str, after: str, before_path: str, after_path: str, context: int) -> str:
+def compare_text(
+    before: str, after: str, before_path: str, after_path: str, context: int
+) -> tuple[int, int, str]:
+    """v2: fix common edges before matching, then share opcodes for counts and patch."""
+    if before == after:
+        return 0, 0, ""
     left, right = _lines(before), _lines(after)
-    matcher = difflib.SequenceMatcher(None, left, right, autojunk=False)
+    prefix = 0
+    while prefix < min(len(left), len(right)) and left[prefix] == right[prefix]:
+        prefix += 1
+    end_left, end_right = len(left), len(right)
+    while end_left > prefix and end_right > prefix and left[end_left - 1] == right[end_right - 1]:
+        end_left -= 1
+        end_right -= 1
+    middle = difflib.SequenceMatcher(
+        None, left[prefix:end_left], right[prefix:end_right], autojunk=False
+    ).get_opcodes()
+    codes = ([("equal", 0, prefix, 0, prefix)] if prefix else []) + [
+        (tag, i1 + prefix, i2 + prefix, j1 + prefix, j2 + prefix) for tag, i1, i2, j1, j2 in middle
+    ]
+    if end_left < len(left):
+        codes.append(("equal", end_left, len(left), end_right, len(right)))
+    added = sum(j2 - j1 for tag, _, _, j1, j2 in codes if tag in ("replace", "insert"))
+    removed = sum(i2 - i1 for tag, i1, i2, _, _ in codes if tag in ("replace", "delete"))
+    # difflib's context grouping operates on the already computed opcodes.
+    matcher = difflib.SequenceMatcher()
+    matcher.opcodes = codes
     output: list[str] = []
 
     def emit(prefix: str, lines: list[str]) -> None:
@@ -40,15 +64,13 @@ def unified_patch(before: str, after: str, before_path: str, after_path: str, co
                     emit("-", left[i1:i2])
                 if tag in ("replace", "insert"):
                     emit("+", right[j1:j2])
-    return "".join(output)
+    return added, removed, "".join(output)
+
+
+def unified_patch(before: str, after: str, before_path: str, after_path: str, context: int) -> str:
+    return compare_text(before, after, before_path, after_path, context)[2]
 
 
 def line_counts(before: str, after: str) -> tuple[int, int]:
-    added = removed = 0
-    matcher = difflib.SequenceMatcher(None, _lines(before), _lines(after), autojunk=False)
-    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-        if tag in ("replace", "insert"):
-            added += j2 - j1
-        if tag in ("replace", "delete"):
-            removed += i2 - i1
+    added, removed, _ = compare_text(before, after, "a/file", "b/file", 0)
     return added, removed
