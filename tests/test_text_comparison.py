@@ -191,3 +191,27 @@ def test_cli_selects_workspace_from_current_skill_directory(text_workspace, tmp_
     result = CliRunner().invoke(cli.app, ["diff", "--summary"])
     assert result.exit_code == 0, result.exception
     assert "SKILL.md" in result.output and "语义" not in result.output
+
+
+@pytest.mark.parametrize("context", [0, 3, 100])
+def test_large_repeated_edges_match_only_changed_middle(monkeypatch, context):
+    from skillforge_vm.diff import text
+
+    original = text.difflib.SequenceMatcher
+    lengths = []
+
+    def matcher(*args, **kwargs):
+        if len(args) >= 3:
+            lengths.append((len(args[1]), len(args[2])))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(text.difflib, "SequenceMatcher", matcher)
+    before = "same\n" * 10000 + "old\n" + "same\n" * 10000
+    after = "same\n" * 10000 + "new\n" + "same\n" * 10000
+    added, removed, patch = text.compare_text(before, after, "a/x", "b/x", context)
+    assert (added, removed) == (1, 1)
+    assert lengths == [(1, 1)]
+    assert "-old\n+new\n" in patch
+    assert "-same\n" not in patch and "+same\n" not in patch
+    assert text.compare_text(before, before, "a/x", "b/y", context) == (0, 0, "")
+    assert lengths == [(1, 1)]
