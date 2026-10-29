@@ -138,6 +138,8 @@ SkillForge/
 
 ## 命令清单
 
+Windows 优先使用根目录 `test.cmd`：默认回归；desktop=隔离手动桌面，smoke=桌面自动验收，experience=真实服务/命令行，portable --bundle=已有便携包验收。首次准备与完整命令表以 README“测试与隔离试用”为准；默认回归不替代真实桌面/发行验收。产品显示名“留痕”，技术命令/目录保持兼容。
+
 ```bash
 uv sync                      # 创建 .venv 并安装后端依赖
 uv run pytest                # 后端测试

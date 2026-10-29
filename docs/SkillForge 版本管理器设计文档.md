@@ -539,7 +539,9 @@ CLI 命令与选项见 M-12；多个工作区默认按当前目录唯一匹配�
 
 ## 4.7 运行与部署形态
 
-Windows 便携包（显示名“留痕”，历史英文可执行文件仅兼容）：`uv run python scripts/build_desktop.py --output dist/desktop/留痕`，输出目录不得已有，打包当前 Electron、现有 Python 运行时/依赖、后端和预构建网页，不要求终端用户安装 Python/Node。双击 `留痕.exe`，随包 `skillforge-vm.cmd` 提供 CLI；Python 隔离模式避免环境变量和其他 Python 安装污染。保留运行时/依赖许可。构建机需先准备 Python 后端依赖及两个 npm 目录；不自动下载其他后端框架。当前仅 Windows 同架构便携包，安装器、代码签名、自动更新、开机启动及其他平台不在本轮；服务内存目标不等于 Electron 总进程内存已验收。 验证命令：`uv run python scripts/verify_desktop.py <包目录> --data-root <不存在的测试目录>`，仅生成测试 Skill。强杀可能由 Windows 一并终止子进程，来不及清理 runtime；按既有恢复边界允许陈旧运行记录，下次启动健康检查后覆盖，不作为业务状态或进程存活证明。
+测试入口统一为根目录 `test.cmd` → `uv run --no-sync python scripts/test.py`。默认仅执行静态检查/后端回归/前端构建/桌面通信单测；desktop 为隔离手动试用，smoke 为真实桌面自动验收，experience/portable 复用既有流程脚本。命令与首次准备唯一清单见 README“测试与隔离试用”；桌面/便携模式自动从 test_support.test_root() 分配新子目录，不覆盖证据、不使用日常数据根，失败保留退出码并停止。此调度属于开发验收设施，不增加业务协议或外部依赖。
+
+Windows 便携包（显示名“留痕”，历史英文可执行文件仅兼容）：`uv run python scripts/build_desktop.py --output dist/desktop/留痕`，输出目录不得已有，打包当前 Electron、现有 Python 运行时/依赖、后端和预构建网页，不要求终端用户安装 Python/Node。双击 `留痕.exe`，随包 `skillforge-vm.cmd` 提供 CLI；Python 隔离模式避免环境变量和其他 Python 安装污染。保留运行时/依赖许可。构建机需先准备 Python 后端依赖及两个 npm 目录；不自动下载其他后端框架。当前仅 Windows 同架构便携包，安装器、代码签名、自动更新、开机启动及其他平台不在本轮；服务内存目标不等于 Electron 总进程内存已验收。 便携验收统一使用 `test.cmd portable --bundle` 指定已有包目录；可复制的构建/验收命令以 README 为准，仅生成测试技能。强杀可能由 Windows 一并终止子进程，来不及清理 runtime；按既有恢复边界允许陈旧运行记录，下次启动健康检查后覆盖，不作为业务状态或进程存活证明。
 
 2026-10-29 用户授权桌面客户端作为主要可视化入口，CLI 与本机 Python 服务保持。源码 `uv sync`、`npm --prefix desktop ci`（Node >=22.12，下载锁定的 Electron 45.1.0）、`npm --prefix frontend run build` 后双击 `start-desktop.cmd`；也可 `npm --prefix desktop start -- --data-root <目录>`。默认数据根与 CLI 相同，未引入第二套业务状态；不同数据根使用独立桌面实例锁。托盘提供打开与退出；应用菜单可明确退出。已有服务缺资源、启动占锁、非法运行地址等显示具体错误，不伪装就绪。Electron Python 启动显式使用 UTF-8 模式以保证隔离模式下的中文诊断；渲染端关闭 Node 集成、开启隔离/沙箱，无特权 preload，只允许本机服务同源导航，拒绝新窗口和权限请求。
 

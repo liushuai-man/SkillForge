@@ -1,106 +1,75 @@
 # 留痕
 
-保存即留痕，比较见原文。代码仓库和命令名仍为 `SkillForge` / `skillforge-vm`。
+保存即留痕，比较见原文。本机技能版本管理器：自动记录快照，查看两版全文与行级差异，按需标记、恢复或撤销。产品显示名为“留痕”；仓库、命令和数据目录名称保持兼容。
 
-本机技能版本管理器：保存文件后自动记录快照，通过桌面客户端/网页左右全文或终端 Git 风格 diff 看清改动，随时标记和恢复版本。
+## 首次准备（源码）
 
-## 安装
-
-源码开发需要 Git、uv、Node.js/npm。在 PowerShell 中执行：
+需要 Git、uv 和 Node.js 22.12+。在项目根目录执行一次：
 
 ```powershell
-git clone https://github.com/liushuai-man/SkillForge.git
-cd SkillForge
 uv sync
-```
-
-已有安装包时，安装 Python 3.11+ 和 pipx 后执行（无需 Node）：
-
-```powershell
-pipx install "安装包路径\skillforge_vm-0.1.0-py3-none-any.whl"
-```
-
-## 启动和快速打开
-
-桌面客户端源码运行（Node >=22.12）：
-
-```powershell
+npm --prefix frontend ci
 npm --prefix desktop ci
-npm --prefix frontend run build
-.\start-desktop.cmd
 ```
 
-界面在独立 Electron 窗口中打开。关闭窗口进入托盘继续监听；托盘或“应用”菜单选择退出，停止客户端自己启动的服务，复用的已有服务继续运行。后端、CLI、数据均留在本机。
+## 日常启动与开发
 
+| 场景 | 在项目根执行 | 数据与退出方式 |
+| --- | --- | --- |
+| 日常桌面 | `.\start-desktop.cmd` | 使用原默认数据根，与命令行共用；关闭到托盘，明确退出才停止自有服务 |
+| 隔离桌面试用 | `.\test.cmd desktop` | 自动分配全新测试数据根，先构建界面；不混用日常历史 |
+| 前端热更新开发 | `.\dev.cmd` | 在浏览器打开，数据为 `dist/dev/data`；Ctrl+C 停止本次前后端 |
+| 浏览器兼容入口 | `.\start-web.cmd` | 使用默认数据根；关闭浏览器仍继续监听 |
 
-构建 Windows 便携包：`uv run python scripts/build_desktop.py --output dist/desktop/留痕`。输出目录需不存在；双击包内 `留痕.exe`，内置 Python/前端，用户无需外装 Python/Node。随包 `skillforge-vm.cmd` 可运行同一套 CLI。当前未提供安装器、签名或自动更新。
+桌面窗口标题只显示“留痕”。日常启动会按需构建界面；已有依赖无需反复安装。`dev.cmd` 是浏览器热更新入口，不是桌面热更新。
 
-验证便携包：`uv run python scripts/verify_desktop.py <包目录> --data-root <新测试目录>`。
+已构建的 Windows 便携包直接双击 **留痕.exe**，无需外装 Python/Node；同目录 `skillforge-vm.cmd` 调用本机服务。完整目录需一起保留。现有 wheel 则仍需 Python 3.11+ 和 pipx，见[用户使用指南](docs/用户使用指南.md)。
 
-以下保留网页开发和浏览器兼容入口。
+## 测试与隔离试用
 
-开发环境在项目根目录执行一个命令：
+统一入口：`test.cmd`，失败会返回非零退出码，遇到失败即停止后续步骤。
 
-```powershell
-.\dev.cmd
-```
+| 命令 | 执行内容 |
+| --- | --- |
+| `.\test.cmd` | 后端静态检查、完整后端回归、前端构建、桌面通信单测 |
+| `.\test.cmd desktop` | 打开可手动操作的隔离桌面；从托盘或应用菜单退出后结束 |
+| `.\test.cmd smoke` | 真实桌面自动验收：名称、全文、保存刷新、托盘和单实例 |
+| `.\test.cmd experience` | 真实服务与命令行流程验收 |
+| `.\test.cmd portable --bundle "dist\desktop\留痕"` | 验收指定的已有便携包 |
+| `.\test.cmd --help` | 查看模式、环境准备和测试目录说明 |
 
-自动准备前端依赖、启动前后端并打开 `http://127.0.0.1:5173/`。前端修改支持热更新；后端修改后按 Ctrl+C 停止并重新运行。关闭该命令会停止本次启动的前后端。开发数据保存在 `dist\dev\data`。
+测试入口复用现有脚本，不自动安装依赖、不自动删除历史证据、不默认打包或执行性能检查。桌面/便携测试每次创建新目录并打印位置，可重复执行；默认根为仓库同级 `Mytest/skillForge-testskills`。本机为 `D:\mycode\Mytest\skillForge-testskills`，可用 `SKILLFORGE_TEST_ROOT` 覆盖。**只放生成的测试技能，不要放真实技能。**
 
-同一开发环境只启动一次；再次运行会提示已有服务地址，请先在原终端按 Ctrl+C。启动失败的具体原因保存在 `dist\dev\service.log`。
-
-日常使用源码版本，可双击 `start-web.cmd`；它按需构建网页并打开本机服务，关闭浏览器后仍继续监听。安装包用户执行：
-
-```powershell
-skillforge-vm gui
-```
-
-## 测试
-
-在项目根目录执行：
+默认回归不等于真实桌面或便携包验收；本机通过不代表新机器、物理断网、签名或跨平台通过。底层命令仍可单独定位失败：
 
 ```powershell
 uv run pytest
 uv run ruff check .
 npm --prefix frontend run build
+npm --prefix desktop test
 ```
 
-真实服务与终端流程检查：
+## 构建并验收便携包
+
+每次使用新输出目录，保留旧包；以下 PowerShell 命令可连续执行：
 
 ```powershell
-uv run python scripts/check_experience.py
+$packageDir = Join-Path "dist\desktop" ("留痕-" + (Get-Date -Format "yyyyMMdd-HHmmss-fff"))
+npm --prefix frontend run build
+uv run python scripts/build_desktop.py --output $packageDir
+.\test.cmd portable --bundle $packageDir
 ```
 
-本机测试 Skill 统一放在 `D:\mycode\Mytest\skillForge-testskills`，各次运行使用独立子目录；不要将真实 Skill 放入测试临时目录。其他机器默认使用仓库同级的 `Mytest\skillForge-testskills`，可通过 `SKILLFORGE_TEST_ROOT` 指定位置。
+目前提供 Windows 同架构便携包，尚无安装器、签名或自动更新。构建会复制当前已准备的 Python 环境及依赖，不能跳过首次准备。
 
-## 更新
+## 常用命令行
 
-源码版本：先在开发终端按 Ctrl+C 停止，再在项目根目录执行：
+默认桌面和命令行使用同一数据根；开发服务或自定义数据根须显式保持一致。
 
 ```powershell
-git pull
-uv sync
-.\dev.cmd
+uv run skillforge-vm diff
+uv run skillforge-vm diff --context 5
+uv run skillforge-vm diff --summary
 ```
 
-安装包版本：停止旧服务，使用新 wheel 重新安装，再打开：
-
-```powershell
-pipx install --force "新安装包路径\skillforge_vm-0.1.0-py3-none-any.whl"
-skillforge-vm gui
-```
-
-详细功能操作见 [用户使用指南](docs/用户使用指南.md)。
-
-## 看改了哪里
-
-网页直接选择旧版/新版，点左侧文件查看完整对齐正文；F7/Shift+F7跳转变化。终端：
-
-```powershell
-skillforge-vm diff
-skillforge-vm diff tested @ --file SKILL.md
-skillforge-vm diff --context 5
-skillforge-vm diff --summary
-```
-
-不做语义、聚类、风险或行为分析。保存自动记录，恢复始终先预览确认。
+文件名、用户正文、锚点名和技术标识保持原值，不做语义、聚类、风险或行为分析。详细操作见[用户使用指南](docs/用户使用指南.md)。
