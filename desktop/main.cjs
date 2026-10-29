@@ -27,7 +27,7 @@ function showWindow() {
 
 function backendCommand() {
   if (app.isPackaged) {
-    return { command: path.join(process.resourcesPath, 'python', 'python.exe'), args: ['-I', '-m', 'skillforge_vm.cli.desktop'] };
+    return { command: path.join(process.resourcesPath, 'python', 'python.exe'), args: ['-I', '-X', 'utf8', '-m', 'skillforge_vm.cli.desktop'] };
   }
   const root = path.resolve(__dirname, '..');
   const python = process.env.SKILLFORGE_DESKTOP_PYTHON || path.join(root, '.venv',
@@ -40,7 +40,7 @@ function backendCommand() {
     if (!home) throw new Error('Python 虚拟环境缺少 home 配置，请重新执行 uv sync。');
     const packages = path.join(venv, 'Lib', 'site-packages');
     const bootstrap = `import site,runpy; site.addsitedir(${JSON.stringify(packages)}); runpy.run_module('skillforge_vm.cli.desktop',run_name='__main__',alter_sys=True)`;
-    return { command: path.join(home, 'python.exe'), args: ['-I', '-c', bootstrap] };
+    return { command: path.join(home, 'python.exe'), args: ['-I', '-X', 'utf8', '-c', bootstrap] };
   }
   return { command: python, args: ['-m', 'skillforge_vm.cli.desktop'] };
 }
@@ -99,7 +99,7 @@ if (!app.requestSingleInstanceLock()) {
   });
   app.whenReady().then(async () => {
     const config = backendCommand();
-    const args = [...config.args];
+    const args = [...config.args, '--parent-pid', String(process.pid)];
     if (dataRoot) args.push('--data-root', path.resolve(dataRoot));
     backend = startBackend(config.command, args, {
       cwd: app.isPackaged ? process.resourcesPath : path.resolve(__dirname, '..'),

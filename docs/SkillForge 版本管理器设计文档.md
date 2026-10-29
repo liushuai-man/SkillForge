@@ -381,7 +381,7 @@ flowchart TB
 - 恢复性能限制：v1 每步全量复核磁盘与目标对象，批量恢复存在近似平方级读取开销；目前只验收小型 Skill，未验证大量文件恢复时延。此限制不改变普通快照的性能目标。
 
 ### M-10 / M-11 / M-12
-- 2026-10-29 桌面入口：M-11 增加 `desktop/` Electron 宿主，复用现有 React/CodeMirror 与本机 HTTP，不直读数据库、不重算 diff。M-12 的 CLI start 与桌面 supervisor 共用 `cli/service.py`；HTTP、状态、对象格式不变。桌面使用原数据根和 runtime，重复打开聚焦已有窗口；关闭窗口进入托盘继续监听，明确退出时通过 stdin EOF 正常停止自有服务，复用的 CLI/网页服务继续运行；父进程异常退出同样触发 EOF。失败提示原因，可重新启动重试。
+- 2026-10-29 桌面入口：M-11 增加 `desktop/` Electron 宿主，复用现有 React/CodeMirror 与本机 HTTP，不直读数据库、不重算 diff。M-12 的 CLI start 与桌面 supervisor 共用 `cli/service.py`；HTTP、状态、对象格式不变。桌面使用原数据根和 runtime，重复打开聚焦已有窗口；关闭窗口进入托盘继续监听，明确退出时通过 stdin EOF 正常停止自有服务，复用的 CLI/网页服务继续运行；父进程异常退出通过 OS 进程句柄监控兜底，避免后代持有管道使 EOF 延迟。失败提示原因，可重新启动重试。
 - M-10：新增只读 `/compare` 和修订 `/content`，详见 §4.6。只经公开 RevisionStore/ObjectStore 读取，不读取工作目录文件来替代历史内容。
 - M-11：每文件一个只读 CodeMirror MergeView，输入两版全文；保留未变化内容与原始行号，红删绿增与字符高亮，上一处/下一处（F7/Shift+F7），可选折叠。文件头显示版本、路径、字节数、换行格式、BOM 与尾部换行。顶部直接选版本/交换/最新两版；侧栏同屏显示文件和历史；历史支持父子比较、两点比较、预览恢复。移除语义/风险/聚类首页、层级选择和逐条语义摘要请求。新增/删除明确不存在侧，二进制/超限不伪造空正文。
 - M-12：默认 `diff [旧版本] [新版本]`，一个位置版本与最新比较；`--base/--head` 为可选写法且不能与位置参数混用。`--file/-f` 精确筛文件，`--context/-U` 指定上下文，`--summary` 只列文件/行数。CLI 直接输出服务 patch，不读 Skill、不另算差异。多个工作区时可从当前 Skill 目录自动识别；其他情况使用 `--ws`。旧隐藏 `--layer` 仅兼容旧报告调用。
@@ -538,7 +538,7 @@ CLI 命令与选项见 M-12；多个工作区默认按当前目录唯一匹配�
 
 ## 4.7 运行与部署形态
 
-2026-10-29 用户授权桌面客户端作为主要可视化入口，CLI 与本机 Python 服务保持。源码 `uv sync`、`npm --prefix desktop ci`（Node >=22.12，下载锁定的 Electron 45.1.0）、`npm --prefix frontend run build` 后双击 `start-desktop.cmd`；也可 `npm --prefix desktop start -- --data-root <目录>`。默认数据根与 CLI 相同，未引入第二套业务状态；不同数据根使用独立桌面实例锁。托盘提供打开与退出；应用菜单可明确退出。已有服务缺资源、启动占锁、非法运行地址等显示具体错误，不伪装就绪。Electron 渲染端关闭 Node 集成、开启隔离/沙箱，无特权 preload，只允许本机服务同源导航，拒绝新窗口和权限请求。
+2026-10-29 用户授权桌面客户端作为主要可视化入口，CLI 与本机 Python 服务保持。源码 `uv sync`、`npm --prefix desktop ci`（Node >=22.12，下载锁定的 Electron 45.1.0）、`npm --prefix frontend run build` 后双击 `start-desktop.cmd`；也可 `npm --prefix desktop start -- --data-root <目录>`。默认数据根与 CLI 相同，未引入第二套业务状态；不同数据根使用独立桌面实例锁。托盘提供打开与退出；应用菜单可明确退出。已有服务缺资源、启动占锁、非法运行地址等显示具体错误，不伪装就绪。Electron Python 启动显式使用 UTF-8 模式以保证隔离模式下的中文诊断；渲染端关闭 Node 集成、开启隔离/沙箱，无特权 preload，只允许本机服务同源导航，拒绝新窗口和权限请求。
 
 
 开发统一入口为根目录 `dev.cmd` → `uv run python scripts/dev.py`：只使用已有 uv/npm 依赖；前端依赖缺失或 lock 更新时执行 npm ci，API 通过现有 CLI start 使用动态端口与独立 `dist/dev/data`，Vite 通过 `SKILLFORGE_DEV_API_URL` 代理该实际地址。启动浏览器、前端热更新，后端修改后重新运行；退出清理仅本次拥有的进程组，不复用或关闭用户其他服务。测试与验收 Skill 使用仓库同级 `Mytest/skillForge-testskills` 下独立目录，可由 `SKILLFORGE_TEST_ROOT` 覆盖；数据库仍须在对应 Skill 目录之外。pytest 临时根、体验检查、容量与安装验收遵守此约定；打包 staging 不属于 Skill。

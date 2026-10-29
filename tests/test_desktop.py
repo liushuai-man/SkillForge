@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 import httpx
+import pytest
 
 
 def python_module(module):
@@ -22,11 +23,14 @@ def python_module(module):
     return [getattr(sys, "_base_executable", sys.executable), "-I", "-c", bootstrap]
 
 
-def start_supervisor(root: Path):
+def start_supervisor(root: Path, parent_pid=None):
     env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
     log = (root.parent / f"{root.name}.log").open("w", encoding="utf-8")
+    args = [*python_module("skillforge_vm.cli.desktop"), "--data-root", str(root)]
+    if parent_pid is not None:
+        args.extend(["--parent-pid", str(parent_pid)])
     process = subprocess.Popen(
-        [*python_module("skillforge_vm.cli.desktop"), "--data-root", str(root)],
+        args,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=log,
@@ -126,5 +130,28 @@ def test_parent_disappears_during_startup_without_leaving_service(tmp_path):
         time.sleep(0.1)
         assert not (root / "runtime.json").exists()
     finally:
+        finish(process)
+        log.close()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows process-handle watchdog")
+def test_parent_death_stops_service_even_when_stdin_pipe_is_still_open(tmp_path):
+    parent = subprocess.Popen(
+        [getattr(sys, "_base_executable", sys.executable), "-c", "import time; time.sleep(60)"]
+    )
+    process, messages, log = start_supervisor(tmp_path / "parent-watch", parent.pid)
+    try:
+        assert messages.get(timeout=45)["owned"] is True
+        parent.kill()
+        parent.wait(timeout=5)
+        # The test intentionally retains the pipe's write end: EOF cannot trigger cleanup.
+        assert not process.stdin.closed
+        process.wait(timeout=10)
+        assert process.returncode == 0
+        assert not (tmp_path / "parent-watch/runtime.json").exists()
+    finally:
+        if parent.poll() is None:
+            parent.kill()
+            parent.wait(timeout=5)
         finish(process)
         log.close()
